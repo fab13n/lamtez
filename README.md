@@ -283,18 +283,3 @@ from a language of the Michelson family:
 * `TRANSFER_TOKENS` must be called from anempty stack, out of
   a lambda, and without `DI*P`-protected values. So the variables
   defined before `contract-call` cannot be used after it.
-
-## Remarks on language.md
-* `time+nat` and `tez*nat` rather than `time+int` and `tez*int`?
-* in the full grammar, s/DIV/EDIV/
-* Does COMPARE apply to composite types?
-* CHECKED_* FLOOR CEIL to remove from full grammar
-* CAST???
-* MAP on sets
-
-
-## MiloDavis
-* Aug 4: 
-    * an oracle can approve a transaction different from the one
-      it was asked about?!
-    * shouldn't we return the transaction's registration #?
