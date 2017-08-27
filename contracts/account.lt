@@ -1,0 +1,29 @@
+type withdrawal = Key key * Amount tez * Signature signature
+type operation = Deposit key + Withdrawal withdrawal
+
+\operation (storage: map key tez):
+( operation ?
+| Deposit key:
+  let new_balance = ( map-find key storage ?
+                    | None: self-amount
+                    | Some balance: self-amount + balance
+                    ) in
+  let storage = map-update key (Some new_balance) storage in
+  ((), storage)
+| Withdrawal w:
+  ( crypto-check w.Key w.Signature (crypto-hash w.Amount) ?
+  | False: fail
+  | True: ( map-find w.Key storage ?
+          | None: fail
+          | Some balance:
+            ( balance >= w.Amount ?
+            | False: fail
+            | True: let storage = ( balance = w.Amount ?
+                                  | True: map-update w.Key None storage
+                                  | False: map-update w.Key (Some (balance - w.Amount)) storage
+                                  ) in
+                    contract-call () w.Amount self-source
+            )
+          )
+  )
+)

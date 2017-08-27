@@ -1,0 +1,13 @@
+type storage = I nat * J nat * Map map nat string
+\parameter storage:
+( parameter ?
+| Some value:
+  let map = map-update storage.J (Some value) storage.Map in
+  (None, {I storage.I, J storage.J+1, Map map})
+| None: ( map-get storage.I storage.Map ?
+        | None: (None, storage)
+        | Some value:
+          let map = map-update storage.I None storage.Map in
+          (Some value, {I storage.I + 1, J storage.J, Map map})
+        )
+)

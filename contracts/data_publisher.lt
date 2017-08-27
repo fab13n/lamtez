@@ -1,0 +1,13 @@
+type storage = Key key * Value string * Fee tez
+\(parameter: option (sig*string)) storage:
+( parameter ?
+| None: ( amount >= storage.Fee ?
+        | False: fail
+        | True: (storage.Value, storage)
+        )
+| Some ss:
+  ( crypto-check storage.Key ss.0 ss.1 ?
+  | False: fail
+  | True: (ss.1, {Key storage.Key, Value ss.1, Fee storage.Fee})
+  )
+)
