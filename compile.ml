@@ -26,10 +26,11 @@ let simple_primitives = [
   "set-mem", "MEM"; "set-update", "UPDATE"; 
   "map-mem", "MEM"; "map-get", "GET"; "map-update", "UPDATE"; "map-map", "MAP";
   "list-map", "MAP";
+  "EQ", "CMPEQ"; "LT", "CMPLT"; "LE", "CMPLE"; "GE", "CMPGE"; "GT", "CMPGT"
 ]
 
 let simple_operators = [
-  "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"]
+  "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"; "AND"; "OR"; "XOR"]
 
 let rec get_level stk v = match stk with
 | [] -> None
@@ -92,6 +93,8 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     not_impl "apply(lambda, _)"
   | IEProduct(fields), _ -> 
     None::stk, Compile_composite.product (List.map (fun f -> snd (c f)) fields)
+  | IESum(0, 2, content), ITSum(Some("bool", []), _) -> None::stk, "FALSE"
+  | IESum(1, 2, content), ITSum(Some("bool", []), _) -> None::stk, "TRUE"
   | IESum(0, 2, content), ITSum(Some("option", [t']), _) ->
     None::stk, "NONE "^compile_iType t'
   | IESum(1, 2, content), ITSum(Some("option", [t']), _) ->
@@ -107,6 +110,10 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     let _, code = c e in None::stk, code^"; "^Compile_composite.product_get i n
   | IESumCase(e, cases), _ ->
       begin match t, cases with
+      | ITSum(Some("bool", []), _), [(_, _, if_false); (v, _, if_true)] ->
+        let _, if_false = compile_iTypedExpr stk if_false in
+        let _, if_true = compile_iTypedExpr (stk) if_true in
+        None::stk, s "IF { %s } { %s }" if_true if_false
       | ITSum(Some("list", [t']), _), [(_, _, if_nil); (v, _, if_cons)] ->
         let _, if_cons = compile_iTypedExpr (Some v::stk) if_cons in
         let _, if_nil = compile_iTypedExpr (stk) if_nil in
@@ -177,8 +184,8 @@ let compile_contract = function
   (body, (ITProduct(None, lazy [tresult; tstorage'])) as typed_body)), _
   when tstorage=tstorage' ->
   let stk, code = compile_iTypedExpr [Some storage; Some param] typed_body in
-  let code = s "CAR; SWAP; CDR; %s; DIP { %s }" 
+  let code = s "DUP; CAR; SWAP; CDR; %s; DIP { %s }" 
     code (sep_list "; " (fun _ -> "DROP") (List.tl stk)) in
-  s "parameter %s;\nstorage %s;\nreturn %s;\ncode {\n  %s\n}"
+  s "parameter %s;\nstorage %s;\nreturn %s;\ncode\n {\n  %s\n }"
   (compile_iType tparam) (compile_iType tstorage) (compile_iType tresult) code
 | _ -> unsound "Bad contract type"

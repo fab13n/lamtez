@@ -4,7 +4,7 @@ open TypingContext
 let ctx = TypingContext.(empty
   |> add_sum     "zero" [] []
   |> add_product "one" [] []
-  |> add_sum     "bool" [] ["True", tone; "False", tone]
+  |> add_sum     "bool" [] ["False", tone; "True", tone]
   |> add_prim    "nat" []
   |> add_prim    "int" []
   |> add_prim    "time" []
