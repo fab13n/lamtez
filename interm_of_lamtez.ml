@@ -191,3 +191,19 @@ let rec string_of_iExpr =
     "("^et e^" ? "^sep_list " | " f cases^")"
 
 and string_of_iTypedExpr (e, t) = "["^string_of_iExpr e^":"^string_of_iType t^"]"
+
+let rec string_of_untyped_iExpr e =
+  let r (e, t) = string_of_untyped_iExpr e in
+  match e with
+  | IELit s | IEId s -> s
+  | IELambda(params, body) ->
+    "\\"^sep_list " " fst params^" -> "^r body
+  | IELetIn(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
+  | IEApp(f, args) -> "("^sep_list " " r (f::args)^")"
+  | IEProduct x  -> "("^sep_list ", " r x^")"
+  | IESum (i, n, x) -> sprintf "%d(%s)" i (r x)
+  | IEProductGet(x, i, n) -> sprintf "%s.%d" (r x) i
+  | IESumCase(e, cases) -> 
+    let f (var, _, e_case) = var^": "^r e_case in
+    "("^r e^" ? "^sep_list " | " f cases^")"
+  

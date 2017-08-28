@@ -39,7 +39,7 @@ let sum i n =
   let p = List.nth (paths n) i in
   let l = List.map (fun b -> if b then "RIGHT" else "LEFT") p in
   List.fold_left (fun acc x-> acc^" "^x^";") "" l
-  (* TOTO List.rev? *)
+  (* TODO List.rev? *)
 
 (* Generates the nested `IF_LEFT{ }{ }` operators which will run the code in cases
  * on alternatives of the proper case. *)
@@ -55,26 +55,30 @@ let sum_case cases =
       "IF_LEFT { " ^ build (trim pp_f) ^ " } { " ^ build (trim pp_t) ^ " }" in
    build pp_n   
 
-(* Generates a tuple of arbitrary size as nested pairs. 
- *)
+(* Generates a tuple of arbitrary size as nested pairs. *)
 let product fields =
   let pp = paths (List.length fields) in
   let pp_n = List.map2 (fun a b -> a, b) pp fields in
   let rec build level = function
     | [[], field] ->
-      let rec dip n f = match n with 0 -> f | n -> "D"^String.make n 'I'^"P { "^f^" }" in
+      let rec dip n f = match n with 0 -> f | n -> "D"^String.make n 'I'^"P { "^f^"}\n" in
       dip level field
     | pp_n ->
       let pp_t, pp_f = List.partition (fun x -> List.hd (fst x)) pp_n in
       let trim = List.map (function (_::p, n) -> (p, n) | _ -> assert false) in
-      build (level) (trim pp_f) ^ "; " ^ build (level+1) (trim pp_t) ^ "; PAIR" in
+      let pp_t, pp_f = trim pp_t, trim pp_f in
+      let sep_t = match pp_t with [_] -> "" | _ -> "; " in
+      let sep_f = match pp_f with [_] -> "" | _ -> "; " in
+      build (level) pp_f ^ sep_f ^ build (level+1) pp_t ^ sep_t ^ "PAIR" in
    build 0 pp_n   
 
+(* Retrieve the i-th element in an n elements product *)
 let product_get i n =
   let p = List.nth (paths n) i in
   let x = List.fold_left (fun acc b -> acc^if b then "D" else "A") "" p in
   "C"^x^"R"
 
+(* Generate the Michelson type corresponding to a product/sum. *)
 let type_ t fields =
   let pp = paths (List.length fields) in
   let pp_n = List.map2 (fun a b -> a, b) pp fields in
@@ -92,8 +96,3 @@ let show n =
   for i=1 to n do
     print_endline(string_of_int i^":"^pp2s (paths i))
   done
-
-(*
-le probleme c'est que je charge le premier cas le plus possible.
-si je divise par 2, il faut que je decide
-*)

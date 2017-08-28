@@ -72,7 +72,7 @@ let add_alias name scheme ctx =
 let add_sum name type_params cases ctx =
   check_fresh_name ctx name;
   check_fresh_tag ctx.sum_tags cases;
-  let ctx = if type_params!=[] then ctx else 
+  let ctx = if type_params<>[] then ctx else 
      add_alias name ([], TApp(name, [])) ctx in
   {ctx with
    sums = StringMap.add name {type_params; cases} ctx.sums;
@@ -82,7 +82,7 @@ let add_sum name type_params cases ctx =
 let add_product name type_params cases ctx =
   check_fresh_name ctx name;
   check_fresh_tag ctx.product_tags cases;
-  let ctx = if type_params!=[] then ctx else 
+  let ctx = if type_params<>[] then ctx else 
      add_alias name ([], TApp(name, [])) ctx in
   {ctx with
    products = StringMap.add name {type_params; cases} ctx.sums;
@@ -91,7 +91,7 @@ let add_product name type_params cases ctx =
 
 let add_prim name type_params ctx = 
   check_fresh_name ctx name;
-  let ctx = if type_params!=[] then ctx else 
+  let ctx = if type_params<>[] then ctx else 
      add_alias name ([], TApp(name, [])) ctx in
   let p = StringMap.add name type_params ctx.primitives in
   {ctx with primitives = p}

@@ -1,6 +1,6 @@
 .PHONY: all clean byte native profile debug sanity test
 
-OCB_FLAGS=-use-ocamlfind -use-menhir -I src -I lib
+OCB_FLAGS=-use-ocamlfind -use-menhir -I src -pkgs str
 OCB=ocamlbuild $(OCB_FLAGS)
 
 all: debug # byte native # profile debug

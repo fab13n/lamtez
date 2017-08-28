@@ -39,7 +39,7 @@ let list_fold_map f acc list =
  * ('k -> 'a -> 'b -> 'c) -> ('k*'a) list -> ('k->'b) list -> ('k->'c) list.
  *)
 let list_assoc_map2 f a b =
-  if List.sort compare (List.map fst a) != List.sort compare (List.map fst b)
+  if List.sort compare (List.map fst a) <> List.sort compare (List.map fst b)
   then type_error "different tag sets for composite type";
   List.map (fun (k, va) -> k, f k va (List.assoc k b)) a
 
@@ -62,14 +62,11 @@ let rec typecheck_expr ctx expr =
   | EId(id) -> ctx, instantiate_scheme (scheme_of_evar ctx id)
 
   | ELambda(id, (t_params, t_arg), e) ->
-    if t_params != [] then unsupported "parametric parameter types";
+    if t_params <> [] then unsupported "parametric parameter types";
     (* Type e supposing that id has type t_arg. *)
     let ctx = add_evar id (t_params, t_arg) ctx in
     let ctx, te = typecheck_expr ctx e in
-    (* TODO generalize: all variables which appear (free) in t_arg and
-     * not in the rest of the environment can be generalized. *)
-    (*
-     xhxm*)
+    (* TODO let-generalization? *)
     let ctx = forget_evar id ctx in
     ctx , TLambda(t_arg, te)
 
