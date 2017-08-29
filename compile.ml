@@ -21,7 +21,7 @@ let dup n =
 let simple_primitives = [
   "now", "NOW"; "unit", "UNIT"; "fail", "FAIL";
   "contract-create", "CREATE_CONTRACT"; "contract-create-account", "CREATE_ACCOUNT"; "contract-get", "DEFAULT_ACCOUNT"; "contract-manager", "MANAGER";
-  "self-amount", "AMOUNT"; "self-contract", "SELF"; "self-balance", "BALANCE"; "self-steps-to-quota", "STEPS_TO_QUOTA"; "self-source", "SOURCE";
+  "self-amount", "AMOUNT"; "self-contract", "SELF"; "self-balance", "BALANCE"; "self-steps-to-quota", "STEPS_TO_QUOTA";
   "crypto-hash", "H";
   "set-mem", "MEM"; "set-update", "UPDATE"; 
   "map-mem", "MEM"; "map-get", "GET"; "map-update", "UPDATE"; "map-map", "MAP";
@@ -71,8 +71,8 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
   | IELambda(vars, body), _ -> unsupported "nested lambdas"
   | IELetIn(v, e0, e1), _ ->
     let stk, c0 = compile_iTypedExpr stk e0 in
-    let stk, c1 = compile_iTypedExpr (Some v :: stk) e1 in
-    stk, c0^"; "^c1
+    let stk, c1 = compile_iTypedExpr (Some v :: List.tl stk) e1 in
+    stk, c0^"# := "^v^"\n"^c1
   | IEApp((IELambda(params, body), tl), args), _ -> not_impl "apply lambda"
   | IEApp((IEId "contract-call", _), [param; amount; contract; storage]), _ ->
     (* param -> tez -> contract param result -> storage -> result*storage *)
@@ -92,10 +92,13 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     (* actual, user-defined lambda. M only supports single-param lambdas.
      * I need to turn those back into curried lambda calls. *)
     not_impl "apply(lambda, _)"
-  | IEProduct(fields), _ -> 
-    None::stk, Compile_composite.product (List.map (fun f -> snd (c f)) fields)
-  | IESum(0, 2, content), ITSum(Some("bool", []), _) -> None::stk, "FALSE"
-  | IESum(1, 2, content), ITSum(Some("bool", []), _) -> None::stk, "TRUE"
+  | IEProduct(fields), _ ->
+    let stk', code = List.fold_left 
+      (fun (stk, code) field -> let stk, code' = compile_iTypedExpr stk field in stk, code^code')
+      (stk, "") (List.rev fields) in
+    None::stk, code^Compile_composite.tuple(List.length fields)
+  | IESum(0, 2, content), ITSum(Some("bool", []), _) -> None::stk, "PUSH bool False"
+  | IESum(1, 2, content), ITSum(Some("bool", []), _) -> None::stk, "PUSH bool True"
   | IESum(0, 2, content), ITSum(Some("option", [t']), _) ->
     None::stk, "NONE "^compile_iType t'
   | IESum(1, 2, content), ITSum(Some("option", [t']), _) ->
@@ -111,30 +114,34 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
   | IEProductGet(e, i, n), _ ->
     let _, code = c e in 
     None::stk, code^Compile_composite.product_get i n
-  | IESumCase(e, cases), _ ->
-      begin match t, cases with
+  | IESumCase((e_test, t_test) as test, cases), _ ->
+     let stk, code = compile_iTypedExpr stk test in
+     let stk = List.tl stk in (* cases are executed with the test removed from stack. *)
+      begin match t_test, cases with
       | ITSum(Some("bool", []), _), [(_, _, if_false); (v, _, if_true)] ->
         let _, if_false = compile_iTypedExpr stk if_false in
         let _, if_true = compile_iTypedExpr (stk) if_true in
-        None::stk, s "IF { %s} { %s}" if_true if_false
+        None::stk, s "%sIF { %s} { %s}" code if_true if_false (* TODO make sure variables aren't used *)
       | ITSum(Some("list", [t']), _), [(_, _, if_nil); (v, _, if_cons)] ->
         let _, if_cons = compile_iTypedExpr (Some v::stk) if_cons in
         let _, if_nil = compile_iTypedExpr (stk) if_nil in
-        None::stk, s "IF_CONS { PAIR; %s} { %s}" if_cons if_nil
+        None::stk, s "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n} { %s}" code v if_cons if_nil
       | ITSum(Some("option", [t']), _), [(_, _, if_none); (v, _, if_some)] ->
         let _, if_some = compile_iTypedExpr (Some v::stk) if_some in
         let _, if_none = compile_iTypedExpr (stk) if_none in
-        None::stk, s "IF_SOME { %s} { %s}" if_some if_none
+        None::stk, s "%sIF_NONE { %s} { # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
       | _ ->
-        let f  (v, t, e)  = snd (compile_iTypedExpr (Some v::stk) e) in
-        None::stk,  Compile_composite.sum_case (List.map f cases)
+        let f  (v, t, e)  = snd (compile_iTypedExpr (Some v::stk) e)^"DIP { DROP } # remove "^v^"\n" in
+        None::stk, code ^ Compile_composite.sum_case (List.map f cases)
       end
   in
   if _DEBUG_ then begin
     decr debug_indent;
     print_endline (String.make (2 * !debug_indent) ' '^"Result: "^Code_format.single_line code)
   end;
-  stk, code^"; # "^string_of_untyped_iExpr e^"\n"
+  let last_char = String.get code (String.length code -1)  in
+  let code = if last_char='\n' then code else code^"; # "^string_of_untyped_iExpr e^"\n" in
+  stk, code
 
 
 and compile_primitive stk name args t = 
@@ -162,10 +169,14 @@ and compile_primitive stk name args t =
     c_args args^name
   else match name with 
     | "contract-call" -> not_impl "TRANSFER_TOKEN"
+    | "self-source" -> begin match t with
+      | ITPrim("contract", [param; result]) -> "SOURCE "^compile_iType param^" "^compile_iType result
+      | _ -> unsupported ("Cannot guess the type of contract parameters, please annotate")
+      end
     | "crypto-check" ->
       begin match args with
       | [key; signature; msg] ->
-        c_args args ^"PAIR; CHECK" (* key->sig->str / key->sig*str *)
+        c_args args ^"DIP { PAIR }; CHECK_SIGNATURE" (* key->sig->str / key->sig*str *)
       | [_;_] | [_] | [] -> unsupported "Partially applied CHECK"
       | _ -> unsound "too many check params"
       end

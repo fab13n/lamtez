@@ -1,4 +1,5 @@
 type t
+type u
 
 val empty: t
 
@@ -19,8 +20,10 @@ val add_product: Tree.tvar -> Tree.tvar list -> (Tree.tag * Tree.typeT) list -> 
 val add_alias: Tree.tvar -> Tree.schemeT -> t -> t
 val add_prim: Tree.tvar -> Tree.tvar list -> t -> t
 
-val add_evar: Tree.tvar -> Tree.schemeT -> t -> t
-val forget_evar: Tree.tvar -> t -> t
+val add_evar: Tree.evar -> Tree.schemeT -> t -> t
+val forget_evar: Tree.evar -> t -> t
+val push_evar: Tree.evar -> Tree.schemeT -> t -> (t*u)
+val pop_evar: u -> t -> t
 
 val unify: t -> Tree.typeT -> Tree.typeT -> (t * Tree.typeT)
 val expand_type: t -> Tree.typeT -> Tree.typeT

@@ -33,7 +33,7 @@ type exprT =
 
   | EId of evar
   | ELambda of evar * schemeT * exprT
-  | ELetIn of evar * exprT * exprT
+  | ELetIn of evar * typeT * exprT * exprT (* TODO type should be a scheme for consistency *)
   | EApp of exprT * exprT
 
   | ETuple of exprT list
@@ -55,7 +55,7 @@ type programT = declT list * exprT
 let tprim0 id = TApp(id, [])
 let rec tlambda = function [] -> raise Not_found | [t] -> t | t :: ts' -> TLambda(t, tlambda ts')
 let tzero = TApp("zero", [])
-let tone = TApp("one", [])
+let tunit = TApp("unit", [])
 let toption x = TApp("option", [x])
 let tlist = TFail
 
@@ -69,27 +69,27 @@ let fresh_tvar ?prefix:(prefix="_") () = TId(fresh_var())
 let fresh_evar ?prefix:(prefix="_") () = EId(fresh_var())
 
 
-let rec replace_evar var t term = 
-  let r = replace_evar var t in
-  match term with
-  | EId var' when var'=var -> t 
-  | EString _ | ENum _| ETez _ | ETime _ | ESig _ | EId _ -> term
-  | ELambda(var', t, term') when var'==var -> term
-  | ELambda(var', t, term') -> ELambda(var', t, r term')
-  | ELetIn(var', t0, t1) when var=var' -> ELetIn(var', r t0, t1)
-  | ELetIn(var', t0, t1) -> ELetIn(var', r t0, r t1)  
-  | EApp(t0, t1) -> EApp(r t0, r t1)
+let rec replace_evar var e e' = 
+  let r = replace_evar var e in
+  match e' with
+  | EId var' when var'=var -> e 
+  | EString _ | ENum _| ETez _ | ETime _ | ESig _ | EId _ -> e'
+  | ELambda(var', _, _) when var'==var -> e'
+  | ELambda(var', t, e0) -> ELambda(var', t, r e0)
+  | ELetIn(var', t, e0, e1) when var=var' -> ELetIn(var', t, r e0, e1)
+  | ELetIn(var', t, e0, e1) -> ELetIn(var', t, r e0, r e1)  
+  | EApp(e0, e1) -> EApp(r e0, r e1)
   | ETuple(list) -> ETuple (List.map r list)
-  | ETupleGet(t, tag) -> ETupleGet(r t, tag)
-  | EProduct(pairs) -> EProduct (List.map (fun (tag, t) -> (tag, r t)) pairs)
-  | EProductGet(t, tag) -> EProductGet(t, tag)
-  | ESum(tag, t) -> ESum(tag, r t)
-  | ESumCase(t, triplets) -> 
-    let f (tag, (var', t)) = if var'=var then (tag, (var, t)) else (tag, (var, r t)) in
-    ESumCase(r t, (List.map f triplets))
-  | EBinOp(a, op, b) -> EBinOp(r a, op, r b)
-  | EUnOp(op, a) -> EUnOp(op, r a)
-  | ETypeAnnot(t, a) -> ETypeAnnot(r t, a)
+  | ETupleGet(e0, tag) -> ETupleGet(r e0, tag)
+  | EProduct(pairs) -> EProduct (List.map (fun (tag, e) -> (tag, r e)) pairs)
+  | EProductGet(e0, tag) -> EProductGet(e0, tag)
+  | ESum(tag, e0) -> ESum(tag, r e0)
+  | ESumCase(e0, cases) -> 
+    let f (tag, (var', ec)) = if var'=var then (tag, (var, ec)) else (tag, (var, r ec)) in
+    ESumCase(r e0, (List.map f cases))
+  | EBinOp(e0, op, e1) -> EBinOp(r e0, op, r e1)
+  | EUnOp(op, e0) -> EUnOp(op, r e0)
+  | ETypeAnnot(e0, t) -> ETypeAnnot(r e0, t)
 
 let rec replace_tvar var t term =
   let r = replace_tvar var t in
@@ -116,11 +116,11 @@ let rec unshadow scoped term =
     ELambda(v', t, replace_evar v (EId v') term')
   | ELambda(v, t, term') ->
     ELambda(v, t, unshadow (v::scoped) term')
-  | ELetIn(v, e0, e1) when List.mem  v scoped ->
+  | ELetIn(v, t, e0, e1) when List.mem  v scoped ->
     let v' = fresh_var ~prefix: v () in
-    ELetIn(v', r e0, replace_evar v (EId v') e1)
-  | ELetIn(v, e0, e1) ->
-    ELetIn(v, r e0, unshadow (v::scoped) e1)
+    ELetIn(v', t, r e0, replace_evar v (EId v') e1)
+  | ELetIn(v, t, e0, e1) ->
+    ELetIn(v, t, r e0, unshadow (v::scoped) e1)
   | EApp(t0, t1) -> EApp(r t0, r t1)
   | ETuple(list) -> ETuple(List.map r list)
   | ETupleGet(t, tag) -> ETupleGet(r t, tag)

@@ -28,6 +28,25 @@ let empty = {
   primitives = StringMap.empty;
 }
 
+let string_of_t ctx =
+  let open TreePrint in 
+  let list_of_map m = StringMap.fold (fun name x acc -> (name, x)::acc) m [] in
+  let string_of_comp sep (name, c) = 
+    "type "^name ^" "^ sep_list " " (fun x->x) c.type_params ^ " = " ^ 
+    sep_list sep (fun (tag, t) -> tag^" "^string_of_type t) c.cases
+  in
+  let string_of_alias (name, (p, t)) = "type "^sep_list " " (fun x->x) (name::p)^" = "^string_of_type t in
+  let string_of_evar (name, s) = "val "^name^": "^string_of_scheme s in
+  let is_not_dummy_alias = function name, ([], TApp(name', [])) -> false | _ -> true in
+  sep_list "\n" (fun x->x) (List.flatten [
+    List.map (string_of_comp " + ") (list_of_map ctx.sums);
+    List.map (string_of_comp " * ") (list_of_map ctx.products) ;
+    List.map string_of_alias (List.filter is_not_dummy_alias (list_of_map ctx.aliases));
+    List.map string_of_evar (list_of_map ctx.evars);
+    ["# sum tags: "^sep_list ", " (fun (a,b) -> a^"->"^b) (list_of_map ctx.sum_tags)];
+    ["# product tags: "^sep_list ", " (fun (a,b) -> a^"->"^b) (list_of_map ctx.product_tags)];
+  ])
+
 let product_of_name, sum_of_name = 
   let composite_of_name cmap name = 
     let c = StringMap.find name cmap in
@@ -69,25 +88,23 @@ let add_alias name scheme ctx =
   check_fresh_name ctx name;
   {ctx with aliases = StringMap.add name scheme ctx.aliases}
 
-let add_sum name type_params cases ctx =
+let add_composite names_map tags_map aliases_map name type_params cases ctx =
   check_fresh_name ctx name;
   check_fresh_tag ctx.sum_tags cases;
-  let ctx = if type_params<>[] then ctx else 
-     add_alias name ([], TApp(name, [])) ctx in
-  {ctx with
-   sums = StringMap.add name {type_params; cases} ctx.sums;
-   sum_tags = List.fold_left (fun tag_map (tag, _) -> StringMap.add tag name tag_map) ctx.sum_tags cases
-  }
+  check_fresh_tag ctx.product_tags cases;
+  ( (if type_params<>[] then aliases_map else StringMap.add name ([], TApp(name, [])) aliases_map),
+    StringMap.add name {type_params; cases} names_map,
+    List.fold_left (fun tags_map (tag, _) -> StringMap.add tag name tags_map) tags_map cases)
+
+let add_sum name type_params cases ctx =
+  let aliases, sums, sum_tags = 
+    add_composite ctx.sums ctx.sum_tags ctx.aliases name type_params cases ctx in
+  {ctx with aliases; sums; sum_tags}
 
 let add_product name type_params cases ctx =
-  check_fresh_name ctx name;
-  check_fresh_tag ctx.product_tags cases;
-  let ctx = if type_params<>[] then ctx else 
-     add_alias name ([], TApp(name, [])) ctx in
-  {ctx with
-   products = StringMap.add name {type_params; cases} ctx.sums;
-   product_tags = List.fold_left (fun tag_map (tag, _) -> StringMap.add tag name tag_map) ctx.sum_tags cases
-  }
+  let aliases, products, product_tags = 
+    add_composite ctx.products ctx.product_tags ctx.aliases name type_params cases ctx in
+  {ctx with aliases; products; product_tags}
 
 let add_prim name type_params ctx = 
   check_fresh_name ctx name;
@@ -99,11 +116,24 @@ let add_prim name type_params ctx =
 let add_evar name t ctx =
   {ctx with evars=StringMap.add name t ctx.evars}
 
-let forget_evar v ctx =
-  {ctx with evars=StringMap.remove v ctx.evars}
+let forget_evar name ctx =
+  {ctx with evars=StringMap.remove name ctx.evars}
+
+type u = evar * schemeT option
+
+let push_evar name t ctx =
+  let prev_content = try Some(StringMap.find name ctx.evars) with Not_found -> None in
+  add_evar name t ctx, (name, prev_content)
+
+let pop_evar (name, prev_t) ctx =
+  match prev_t with
+  | None -> forget_evar name ctx
+  | Some t -> add_evar name t ctx
 
 let instantiate_scheme (params, t) =
-  List.fold_left (fun t p -> replace_tvar p (fresh_tvar()) t) t params
+  let x = List.fold_left (fun t p -> replace_tvar p (fresh_tvar()) t) t params in
+  print_endline ("Instanciate "^TreePrint.string_of_scheme (params, t)^" ::= "^TreePrint.string_of_type x);
+  x
 
 let instantiate_composite name (params, d_pairs) =
   let subst = List.map (fun v -> (v, fresh_tvar())) params in
@@ -121,12 +151,11 @@ let rec expand_type ctx t =
   | TId id -> (try r (instantiate_scheme (StringMap.find id ctx.aliases)) with Not_found -> t)
 
 and expand_scheme ctx (v, t) =
+  failwith "Check expand_scheme!";
   [], expand_type ctx t
 
 and scheme_of_evar ctx name = 
-  try
-    let s = StringMap.find name ctx.evars in
-    expand_scheme ctx s
+  try StringMap.find name ctx.evars
   with Not_found -> type_error("Unbound variable "^name)
 
 (* Combo of a fold_left2 with a map2: the function f returns both
@@ -160,6 +189,8 @@ let rec unify ctx t0 t1 =
     let ctx, t0 = unify ctx t00 t10 in
     let ctx, t1 = unify ctx t01 t11 in
     ctx, TLambda(t0, t1)
+  | TApp("nat", []), TApp("int", []) | TApp("int", []), TApp("nat", []) ->
+    ctx, TApp("nat", [])
   | TApp(name0, args0), TApp(name1, args1) 
     when name0=name1 && List.length args0 = List.length args1 ->
     let ctx, args_u = list_fold_map2 unify ctx args0 args1 in
@@ -169,20 +200,3 @@ let rec unify ctx t0 t1 =
     ctx, TTuple(c)
   | _ -> type_error ("Not unifiable: "^TreePrint.string_of_type t0^" and "^TreePrint.string_of_type t1)
 
-let string_of_t ctx =
-  let open TreePrint in 
-  let list_of_map m = StringMap.fold (fun name x acc -> (name, x)::acc) m [] in
-  let string_of_comp sep (name, c) = 
-    "type "^name ^" "^ sep_list " " (fun x->x) c.type_params ^ " = " ^ 
-    sep_list sep (fun (tag, t) -> tag^" "^string_of_type t) c.cases
-  in
-  let string_of_alias (name, (p, t)) = "type "^sep_list " " (fun x->x) (name::p)^" = "^string_of_type t in
-  let string_of_evar (name, s) = "val "^name^": "^string_of_scheme s in
-  sep_list "\n" (fun x->x) (List.flatten [
-    List.map (string_of_comp " + ") (list_of_map ctx.sums);
-    List.map (string_of_comp " * ") (list_of_map ctx.products) ;
-    List.map string_of_alias (list_of_map ctx.aliases);
-    List.map string_of_evar (list_of_map ctx.evars);
-    (* "# sum tags: "^sep_list ", " (fun (a,b) -> a^"->"^b) (list_of_map ctx.sum_tags) *)
-    (* "# product tags: "^sep_list ", " (fun (a,b) -> a^"->"^b) (list_of_map ctx.product_tags) *)
-  ])

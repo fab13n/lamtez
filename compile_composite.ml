@@ -55,22 +55,31 @@ let sum_case cases =
       "IF_LEFT { " ^ build (trim pp_f) ^ " } { " ^ build (trim pp_t) ^ " }" in
    build pp_n   
 
-(* Generates a tuple of arbitrary size as nested pairs. *)
-let product fields =
-  let pp = paths (List.length fields) in
-  let pp_n = List.map2 (fun a b -> a, b) pp fields in
-  let rec build level = function
-    | [[], field] ->
-      let rec dip n f = match n with 0 -> f | n -> "D"^String.make n 'I'^"P { "^f^"}\n" in
-      dip level field
-    | pp_n ->
-      let pp_t, pp_f = List.partition (fun x -> List.hd (fst x)) pp_n in
-      let trim = List.map (function (_::p, n) -> (p, n) | _ -> assert false) in
-      let pp_t, pp_f = trim pp_t, trim pp_f in
-      let sep_t = match pp_t with [_] -> "" | _ -> "; " in
-      let sep_f = match pp_f with [_] -> "" | _ -> "; " in
-      build (level) pp_f ^ sep_f ^ build (level+1) pp_t ^ sep_t ^ "PAIR" in
-   build 0 pp_n   
+(* Turns the `n`  elements on the stack into a n-tuple.
+ * First element of the tuple must be on top of stack, last on bottom. *)
+let tuple n =
+  let dip_pair = function
+    | 0 -> "PAIR"
+    | n -> "D"^String.make n 'I'^"P { PAIR }" in
+
+  let rec step y =
+    print_endline("step "^pp2s y);
+    match y with
+    | (false::x0) :: (true::x1) :: y when x0=x1 -> 0, x0::y
+    | x :: y -> let n, y = step y in n+1, x::y
+    | [] -> assert false in
+
+  let rec f y =
+    print_endline("f "^pp2s y);
+    match y with
+    | [[]] -> []
+    | [_] -> assert false
+    | y -> let n, y = step y in n :: f y in
+
+  let rev_paths = List.map List.rev (paths n) in
+  let code_list = List.map dip_pair (f rev_paths) in
+  let code_str = String.concat "; " code_list in
+  code_str
 
 (* Retrieve the i-th element in an n elements product *)
 let product_get i n =

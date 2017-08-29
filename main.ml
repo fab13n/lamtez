@@ -41,7 +41,7 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
   if type_p || intermediate_p || compile_p then begin
     let ctx, t = Typing.typecheck_contract DefaultContext.ctx ast in
     print_endline ("\nResulting type: "^TreePrint.string_of_type t);
-    print_endline ("\nContext:\n"^TypingContext.string_of_t ctx);
+    print_endline ("\nContext:\n"^TypingContext.string_of_t ctx); 
     if intermediate_p || compile_p then begin
       let i = Interm_of_lamtez.compile_exprT ctx (snd ast) in
       print_endline ("\nIntermediate tree:\n"^Interm_of_lamtez.string_of_iTypedExpr i);

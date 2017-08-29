@@ -67,7 +67,7 @@ expr0:
 | LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(pe, pt, acc)) p e}
 | LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId "unit" | [e] -> e | p -> ETuple(p)}
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(p);}
-| LET p=parameter EQ e0=expr IN e1=expr {ELetIn(fst p, e0, e1)} (* TODO keep annotation if present *)
+| LET p=parameter EQ e0=expr IN e1=expr {ELetIn(fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(e, tag)}
 | e=expr0 n=TUPLE_GET {ETupleGet(e, n)}
 

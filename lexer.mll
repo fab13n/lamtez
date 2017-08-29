@@ -5,17 +5,22 @@
 
   exception Lexing_error of string
 
-  let int_of_tz_cents s =
-    let i = String.index s '.' in
-    100 * (int_of_string (String.sub s 2 (i-2))) + (int_of_string (String.sub s (i+1) 2));;
-
-  let int_of_tz_int s =
-    100 * (int_of_string (String.sub s 2 (String.length s - 2)))
-
-  (* Remove a characters on the left and b characters on the right of the next lexeme in lexbuf. *)
+  (* Remove `a` characters on the left and `b` characters on the right of the next lexeme in `lexbuf`. *)
   let trim lexbuf a b =
     let s = Lexing.lexeme lexbuf in
     String.sub s a (String.length s - a - b)
+
+  let int_of_tz_cents s =
+    let l = String.length s in
+    let ints  = String.sub s 2 (l-5) in
+    let cents = String.sub s (l-2) 2 in
+    100 * int_of_string ints + int_of_string cents
+
+  let int_of_tz_int s =
+    let l = String.length s in
+    let ints = String.sub s 2 (l-2) in
+    100 * int_of_string ints
+
 }
 
 let white = ['\n' '\r' '\t' ' ']+

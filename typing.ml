@@ -53,29 +53,36 @@ let rec typecheck_expr ctx expr =
     (* print_endline ("In context: "^TypingContext.string_of_t ctx); *)
     incr debug_indent
   end;
-  let ctx, t = match expr with
+
+  let ctx, t = try match expr with
   | ENum n  -> ctx, tprim0 (if n >= 0 then "nat" else "int")
   | EString _ -> ctx, tprim0 "string"
   | ETez _  -> ctx, tprim0 "tez" 
   | ESig _  -> ctx, tprim0 "sig"
   | ETime _ -> ctx, tprim0 "time"
-  | EId(id) -> ctx, instantiate_scheme (scheme_of_evar ctx id)
+  | EId(id) -> 
+    if id = "self-source" then begin
+      print_endline ("J'y suis: "^TreePrint.string_of_scheme (scheme_of_evar ctx id))
+    end;
+    let scheme = scheme_of_evar ctx id in
+    ctx, instantiate_scheme (scheme)
 
   | ELambda(id, (t_params, t_arg), e) ->
-    if t_params <> [] then unsupported "parametric parameter types";
+    (if t_params <> [] then unsupported "parametric parameter types");
     (* Type e supposing that id has type t_arg. *)
-    let ctx = add_evar id (t_params, t_arg) ctx in
+    let ctx, prev = push_evar id (t_params, t_arg) ctx in
     let ctx, te = typecheck_expr ctx e in
     (* TODO let-generalization? *)
-    let ctx = forget_evar id ctx in
+    let ctx = pop_evar prev ctx in
     ctx , TLambda(t_arg, te)
 
-  | ELetIn(id, e0, e1) ->
+  | ELetIn(id, t_id, e0, e1) ->
     let ctx, t0 = typecheck_expr ctx e0 in
+    let ctx, t0 = unify ctx t_id t0 in
     (* TODO: generalize t0? *)
-    let ctx = add_evar id ([], t0) ctx in
+    let ctx, prev = push_evar id ([], t0) ctx in
     let ctx, t1 = typecheck_expr ctx e1 in
-    let ctx = forget_evar id ctx in
+    let ctx = pop_evar prev ctx in
     ctx, t1
 
   | EApp(f, arg) ->
@@ -84,6 +91,7 @@ let rec typecheck_expr ctx expr =
     let ctx, t_param, t_result = match t_f with
       | TLambda(t_param, t_result) -> ctx, t_param, t_result
       | TId("contract-call") ->
+        (* TODO contract-call is a variable name, not a type name, this test is wrong! *)
         (* TODO check that other variables aren't used after this. *)
         (* TODO check that storage argument type == contract storage type *)
         (* TODO check that we aren't in a lambda. *)
@@ -119,6 +127,10 @@ let rec typecheck_expr ctx expr =
   | ESumCase(e, cases) -> typecheck_ESumCase ctx e cases
   | EBinOp(a, op, b) -> typecheck_EBinOp ctx a op b
   | EUnOp(op, a) -> typecheck_EUnOp ctx op a
+  with
+  | Typing(msg) ->
+    print_endline ("\n"^msg^": While typing "^TreePrint.string_of_expr expr^"\nContext:\n"^TypingContext.string_of_t ctx);
+    raise Exit
   in
   let t = expand_type ctx t in
   E2T.set expr t;
@@ -330,7 +342,7 @@ let typecheck_decl ctx = function
   | DProduct(var, params, cases) -> add_product var params cases ctx
   | DSum(var, params, cases) -> add_sum var params cases ctx
 
-  let typecheck_contract ctx (dd, e) =
+let typecheck_contract ctx (dd, e) =
   let ctx = List.fold_left typecheck_decl ctx dd in
   let ctx, t = typecheck_expr ctx e in
   let param = fresh_tvar ~prefix:"param" () in

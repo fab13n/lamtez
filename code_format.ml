@@ -24,6 +24,6 @@ let indent code =
 let endline_regexp = Str.regexp ";? *\\(#.*\\)?\n"
 
 (* Remove comments at ends-of-lines and replace returns with semicolons,
- * thus producing a single-line Michelson code. *)
+ * thus producing a single-line Michelson code.*)
 let single_line code = 
   Str.global_replace endline_regexp "; " code

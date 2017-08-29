@@ -4,13 +4,16 @@ let sep_list separator f = function
 | [] -> ""
 | a :: b -> List.fold_left (fun acc e -> acc^separator^f e) (f a) b
 
-let rec string_of_type t = match t with
-| TId s -> s
-| TFail -> "fail"
-| TLambda(a, b) -> "("^string_of_type a^" → "^string_of_type b^")"
-| TTuple(list) -> "("^sep_list "*" string_of_type list^")"
-| TApp(name, []) -> name
-| TApp(name, args) -> "("^name^" "^sep_list " " string_of_type args^")"
+let rec string_of_type t = 
+  let sot = string_of_type in
+  match t with
+  | TId s -> s
+  | TFail -> "fail"
+  | TLambda(_) as t ->
+      let rec f = function TLambda(a, b) -> sot a^" -> "^f b | t -> sot t in "("^f t^")"
+  | TTuple(list) -> "("^sep_list " * " sot list^")"
+  | TApp(name, []) -> name^"@"
+  | TApp(name, args) -> "("^name^" "^sep_list " " sot args^")"
 
 let string_of_decl_pair (tag, t) = tag^": "^string_of_type t
 
@@ -39,25 +42,31 @@ let string_of_binop = function
 
 let string_of_unop = function UAbs -> "abs" | UNeg -> "-" | UNot -> "!"
 
-let rec string_of_expr e = match e with 
-| EString s -> "\""^s^"\""
-| ENum n -> string_of_int n
-| ETez n -> Printf.sprintf "TZ%d.%02d" (n/100) (n mod 100)
-| ETime s -> s
-| ESig s -> "sig:"^s
-| EId s -> s
-| ELambda(v, t, e) -> "λ("^v^": "^string_of_scheme t^"): "^string_of_expr e
-| ELetIn(v, e0, e1) -> "let "^v^" = "^string_of_expr e0^" in "^string_of_expr e1
-| EApp(a, b) -> "("^string_of_expr a^" "^string_of_expr b^")"
-| ETuple(list) -> "(" ^ sep_list ", " string_of_expr list ^ ")"
-| ETupleGet(e, tag) -> string_of_expr e ^"."^string_of_int tag
-| EProduct(pairs) -> "{"^sep_list ", " (fun (tag, e) -> tag^" "^string_of_expr e) pairs^"}"
-| EProductGet(t, tag) -> string_of_expr t^"."^tag
-| ESum(tag, t) -> tag^" "^string_of_expr t
-| ESumCase(t, triplets) -> "("^string_of_expr t^" ? "^sep_list " | " (fun (tag, (v, e)) -> tag^": "^string_of_expr e) triplets^")"
-| EBinOp(a, op, b) -> "("^string_of_expr a^" "^string_of_binop op^" "^string_of_expr b^")"
-| EUnOp(op, a) -> string_of_unop op^string_of_expr a
-| ETypeAnnot(e, t) -> "("^string_of_expr e^": "^string_of_type t^")"
+let rec string_of_expr e = 
+  let soe = string_of_expr in
+  match e with 
+  | EString s -> "\""^s^"\""
+  | ENum n -> string_of_int n
+  | ETez n -> Printf.sprintf "TZ%d.%02d" (n/100) (n mod 100)
+  | ETime s -> s
+  | ESig s -> "sig:"^s
+  | EId s -> s
+  | ELambda(_) ->
+    let rec f = function 
+      | ELambda(v, t, e) -> "("^v^": "^string_of_scheme t^") "^f e
+      | e -> ": "^soe e in
+    "(λ"^f e^")"
+  | ELetIn(v, t, e0, e1) -> "let ("^v^": "^string_of_type t^") = "^soe e0^" in "^soe e1
+  | EApp(_) as e -> let rec f = function EApp(a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
+  | ETuple(list) -> "(" ^ sep_list ", " soe list ^ ")"
+  | ETupleGet(e, tag) -> soe e ^"."^string_of_int tag
+  | EProduct(pairs) -> "{"^sep_list ", " (fun (tag, e) -> tag^" "^soe e) pairs^"}"
+  | EProductGet(t, tag) -> soe t^"."^tag
+  | ESum(tag, t) -> tag^" "^soe t
+  | ESumCase(t, triplets) -> "("^soe t^" ? "^sep_list " | " (fun (tag, (v, e)) -> tag^": "^soe e) triplets^")"
+  | EBinOp(a, op, b) -> "("^soe a^" "^string_of_binop op^" "^soe b^")"
+  | EUnOp(op, a) -> string_of_unop op^soe a
+  | ETypeAnnot(e, t) -> "("^soe e^": "^string_of_type t^")"
 
 let string_of_program (d, e) =
   sep_list "\n" string_of_decl d ^ "\n" ^

@@ -1,7 +1,7 @@
 type storage = Key key * Value string * Fee tez
 \(parameter: option (sig*string)) storage:
 ( parameter ?
-| None: ( amount >= storage.Fee ?
+| None: ( self-amount >= storage.Fee ?
         | False: fail
         | True: (storage.Value, storage)
         )

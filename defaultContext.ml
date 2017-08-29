@@ -3,8 +3,8 @@ open TypingContext
 
 let ctx = TypingContext.(empty
   |> add_sum     "zero" [] []
-  |> add_product "one" [] []
-  |> add_sum     "bool" [] ["False", tone; "True", tone]
+  |> add_product "unit" [] []
+  |> add_sum     "bool" [] ["False", tunit; "True", tunit]
   |> add_prim    "nat" []
   |> add_prim    "int" []
   |> add_prim    "time" []
@@ -12,8 +12,8 @@ let ctx = TypingContext.(empty
   |> add_prim    "string" []
   |> add_prim    "tez" []
   |> add_prim    "sig" []
-  |> add_sum     "option" ["a"] ["None", tone; "Some", TId "a"]
-  |> add_sum     "list" ["a"] ["Nil", tone; "Cons", TTuple[TId "a"; TApp("list", [TId "a"])]]
+  |> add_sum     "option" ["a"] ["None", tunit; "Some", TId "a"]
+  |> add_sum     "list" ["a"] ["Nil", tunit; "Cons", TTuple[TId "a"; TApp("list", [TId "a"])]]
   |> add_prim    "set" ["a"]
   |> add_prim    "map" ["k"; "v"]
   |> add_prim    "contract" ["param"; "result"]
@@ -21,7 +21,7 @@ let ctx = TypingContext.(empty
   (* misc. *)
 
   |> add_evar "now"  ([], tprim0 "time")
-  |> add_evar "unit" ([], tone)
+  |> add_evar "unit" ([], tunit)
   |> add_evar "fail" ([], TFail)
 
   (* contract manipulation *)
@@ -48,9 +48,9 @@ let ctx = TypingContext.(empty
     (* key -> key? -> bool -> tez -> contract unit unit *)
       ([], tlambda [tprim0 "key"; toption (tprim0 "key");
                 tprim0 "bool"; tprim0 "tez";
-                TApp("contract", [tone; tone])])
+                TApp("contract", [tunit; tunit])])
   |> add_evar "contract-get"
-    ([], TLambda(tprim0 "key", TApp("contract", [tone; tone])))
+    ([], TLambda(tprim0 "key", TApp("contract", [tunit; tunit])))
   |> add_evar "contract-manager"
     (["param"; "storage"],
      TLambda(TApp("contract", [TId "param"; TId "storage"]), tprim0 "key"))
@@ -59,11 +59,11 @@ let ctx = TypingContext.(empty
 
   |> add_evar "self-amount" ([], tprim0 "tez")
   |> add_evar "self-contract"
-    (["param"; "storage"], TApp("contract", [TId "param"; TId "storage"]))
+    (["param"; "result"], TApp("contract", [TId "param"; TId "result"]))
   |> add_evar "self-balance" ([], tprim0 "tez")
   |> add_evar "self-steps-to-quota" ([], tprim0 "nat")
   |> add_evar "self-source"
-    (["param"; "storage"], TApp("contract", [TId "param"; TId "storage"]))
+    (["param"; "result"], TApp("contract", [TId "param"; TId "result"]))
 
   (* crypto *)
 
@@ -97,7 +97,7 @@ let ctx = TypingContext.(empty
   |> add_evar "map-get" 
     (["k"; "v"], tlambda [TId "k"; 
                           TApp("map", [TId "k"; TId "v"]);
-                          toption(tprim0 "bool")])
+                          toption(TId "v")])
   |> add_evar "map-update" 
     (["k"; "v"], tlambda [TId "k"; 
                           toption (TId "v");
