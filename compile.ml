@@ -72,7 +72,7 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
   | IELetIn(v, e0, e1), _ ->
     let stk, c0 = compile_iTypedExpr stk e0 in
     let stk, c1 = compile_iTypedExpr (Some v :: List.tl stk) e1 in
-    stk, c0^"# := "^v^"\n"^c1
+    stk, c0^"# := "^v^"\n"^c1^"DIP { DROP } # remove "^v^"\n"
   | IEApp((IELambda(params, body), tl), args), _ -> not_impl "apply lambda"
   | IEApp((IEId "contract-call", _), [param; amount; contract; storage]), _ ->
     (* param -> tez -> contract param result -> storage -> result*storage *)
@@ -82,7 +82,8 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
       snd(compile_iTypedExpr (None::None::stk) contract) ^
       snd(compile_iTypedExpr (None::None::None::stk) storage) ^
       "DIIIIP { "^sep_list "; " (fun _ -> "DROP") stk^"} # Clean rest of stack \n"^
-      "TRANSFER_TOKENS; PAIR" in
+      "TRANSFER_TOKENS; PAIR"^
+      "DIP { " ^"} # restore dummy stack" in
     [None], code (* Now the stack only contains the result and updated storage *)
   | IEApp((IEId(name), tl), args), _ -> begin match get_level stk name with
     | Some n -> not_impl "user-defined lambda" (* user-defined lambda *)
@@ -140,7 +141,8 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     print_endline (String.make (2 * !debug_indent) ' '^"Result: "^Code_format.single_line code)
   end;
   let last_char = String.get code (String.length code -1)  in
-  let code = if last_char='\n' then code else code^"; # "^string_of_untyped_iExpr e^"\n" in
+  let stk_comment = " : "^String.concat " : " (List.map (function None -> "." | Some x -> x) (List.tl stk)) in
+  let code = if last_char='\n' then code else code^"; # "^string_of_untyped_iExpr e^stk_comment^"\n" in
   stk, code
 
 

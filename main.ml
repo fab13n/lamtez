@@ -23,29 +23,29 @@ let parse_args () =
   Arg.parse spec_list parse_file "Lamtez compiler";
   !type_p, !compile_p, !intermediate_p, List.rev !inputs, !output
 
-
+let log msg =
+  let start = "\x1B[1;31m" and finish = "\x1B[0;0m" in
+  print_endline ("["^start^msg^finish^"]")
 
 let parse_file type_p compile_p intermediate_p output_spec input_spec =
   let name, lexstream = match input_spec with
-    | File name -> name, Lexing.from_channel(open_in name)
-    | String s -> s, Lexing.from_string(s)
+    | File name -> log("Reading file "^name); name, Lexing.from_channel(open_in name)
+    | String s -> log("Reading string "^s); s, Lexing.from_string(s)
   in
-  print_endline ("\n"^String.make 80 '*');
-  print_endline ("Contract "^name^":");
-  let ast = try Parser.main Lexer.read lexstream with
-  | Lexer.Lexing_error msg -> [], Tree.EString ("lexing: "^msg)
-  | Parser.Error -> [], Tree.EString("parsing: error at "^
-    string_of_int (Lexing.lexeme_start lexstream))
-  in
+  log "Parsing file";
+  let ast = Parser.main Lexer.read lexstream in
   print_endline (TreePrint.string_of_program ast^"\n");
   if type_p || intermediate_p || compile_p then begin
+    log "Typechecking";
     let ctx, t = Typing.typecheck_contract DefaultContext.ctx ast in
-    print_endline ("\nResulting type: "^TreePrint.string_of_type t);
+    log ("Typechecked with resulting type: "^TreePrint.string_of_type t);
     print_endline ("\nContext:\n"^TypingContext.string_of_t ctx); 
     if intermediate_p || compile_p then begin
+      log "Intermediate tree";
       let i = Interm_of_lamtez.compile_exprT ctx (snd ast) in
       print_endline ("\nIntermediate tree:\n"^Interm_of_lamtez.string_of_iTypedExpr i);
       if compile_p then
+        log "Compiling";
         let code = Compile.compile_contract i in
         match output_spec with
         | None -> print_endline code
