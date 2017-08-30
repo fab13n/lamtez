@@ -1,0 +1,7 @@
+type storage = RoyalKey key * EnthronementDate time * EnthronementCost tez
+
+\(parameter: key) storage:
+( storage.EnthronementDate + 604800 > now or self-amount > storage.EnthronementCost ?
+| True: ((), {RoyalKey parameter, EnthronementDate now, EnthronementCost self-amount})
+| False: fail
+)

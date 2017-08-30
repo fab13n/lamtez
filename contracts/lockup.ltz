@@ -1,0 +1,7 @@
+type storage = Date time * Amount tez * Destination contract unit unit
+
+\ (parameter:unit) storage:
+  ( now >= storage.Date ?
+  | False: fail
+  | True: contract-call () storage.Amount storage.Destination storage
+  )
