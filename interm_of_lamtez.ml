@@ -80,9 +80,10 @@ let rec string_of_untyped_iExpr e =
   | IEProduct x  -> "("^sep_list ", " r x^")"
   | IESum (i, n, x) -> sprintf "%d(%s)" i (r x)
   | IEProductGet(x, i, n) -> sprintf "%s.%d" (r x) i
-  | IESumCase(e, cases) -> 
-    let f (var, _, e_case) = var^": "^r e_case in
-    "("^r e^" ? "^sep_list " | " f cases^")"
+  | IESumCase(e, cases) ->
+    let f i (v, _, e_case) = sprintf "%d(%s): %s" i v (r e_case) in
+    let cases = List.mapi f cases in
+    "("^r e^" ? "^String.concat " | " cases^")"
   
 let prim_translations = [
   "time", "timestamp"; "sig", "signature";
@@ -148,7 +149,7 @@ let rec compile_exprT ctx e =
 
   match e with
 
-  | ENum n -> 
+  | ENat n | EInt n -> 
     let s = string_of_int n in 
     let s = if n>=0 then s else "("^s^")" in
     IELit(s), it

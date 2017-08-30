@@ -55,7 +55,8 @@ let rec typecheck_expr ctx expr =
   end;
 
   let ctx, t = try match expr with
-  | ENum n  -> ctx, tprim0 (if n >= 0 then "nat" else "int")
+  | ENat n  -> ctx, tprim0 "nat"
+  | EInt n  -> ctx, tprim0 "int"
   | EString _ -> ctx, tprim0 "string"
   | ETez _  -> ctx, tprim0 "tez" 
   | ESig _  -> ctx, tprim0 "sig"
@@ -69,6 +70,7 @@ let rec typecheck_expr ctx expr =
 
   | ELambda(id, (t_params, t_arg), e) ->
     (if t_params <> [] then unsupported "parametric parameter types");
+    (* TODO fail if id is bound by default ctx? *)
     (* Type e supposing that id has type t_arg. *)
     let ctx, prev = push_evar id (t_params, t_arg) ctx in
     let ctx, te = typecheck_expr ctx e in
@@ -77,6 +79,7 @@ let rec typecheck_expr ctx expr =
     ctx , TLambda(t_arg, te)
 
   | ELetIn(id, t_id, e0, e1) ->
+    (* TODO fail if id is bound by default ctx? *)
     let ctx, t0 = typecheck_expr ctx e0 in
     let ctx, t0 = unify ctx t_id t0 in
     (* TODO: generalize t0? *)
@@ -161,6 +164,7 @@ and typecheck_ESumCase ctx e e_cases =
   (* TODO check that declaration and case domains are equal. *)
   let ctx, t_pairs = list_fold_map 
     (fun ctx (tag, (v, e)) -> 
+      (* TODO fail if v is bound by default ctx? *)
       let ctx = add_evar v ([], List.assoc tag case_types) ctx in
       let ctx, t = typecheck_expr ctx e in 
       let ctx = forget_evar v ctx in

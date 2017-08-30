@@ -25,7 +25,8 @@ type binOp =
 type unOp = UNot | UNeg | UAbs
 
 type exprT =
-  | ENum of int
+  | ENat of int
+  | EInt of int
   | EString of string
   | ETez of int
   | ETime of string
@@ -73,7 +74,7 @@ let rec replace_evar var e e' =
   let r = replace_evar var e in
   match e' with
   | EId var' when var'=var -> e 
-  | EString _ | ENum _| ETez _ | ETime _ | ESig _ | EId _ -> e'
+  | EString _ | ENat _| EInt _| ETez _ | ETime _ | ESig _ | EId _ -> e'
   | ELambda(var', _, _) when var'==var -> e'
   | ELambda(var', t, e0) -> ELambda(var', t, r e0)
   | ELetIn(var', t, e0, e1) when var=var' -> ELetIn(var', t, r e0, e1)
@@ -110,7 +111,7 @@ let replace_tvars tvars types t = List.fold_left2
 let rec unshadow scoped term =
   let r = unshadow scoped in
   match term with
-  | EString _ | ENum _| ETez _ | ETime _ | ESig _ | EId _ -> term
+  | EString _ | ENat _| EInt _ | ETez _ | ETime _ | ESig _ | EId _ -> term
   | ELambda(v, t, term') when List.mem v scoped ->
     let v' = fresh_var ~prefix:v () in
     ELambda(v', t, replace_evar v (EId v') term')

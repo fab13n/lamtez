@@ -1,7 +1,8 @@
 %{ 
 open Tree 
 %}
-%token <int> NUM
+%token <int> NAT
+%token <int> INT
 %token <int> TEZ
 %token <string> STRING
 %token <string> TIMESTAMP
@@ -57,7 +58,8 @@ composite_decl_rhs:
 composite_decl_pair: tag=TAG COLON? t=typeT {(tag, t)}
 
 expr0:
-| n=NUM {ENum n}
+| n=INT {EInt n}
+| n=NAT {ENat n}
 | n=TEZ {ETez n}
 | n=TIMESTAMP {ETime n}
 | s=SIGNATURE {ESig s}

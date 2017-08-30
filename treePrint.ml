@@ -12,7 +12,7 @@ let rec string_of_type t =
   | TLambda(_) as t ->
       let rec f = function TLambda(a, b) -> sot a^" -> "^f b | t -> sot t in "("^f t^")"
   | TTuple(list) -> "("^sep_list " * " sot list^")"
-  | TApp(name, []) -> name^"@"
+  | TApp(name, []) -> "'"^name
   | TApp(name, args) -> "("^name^" "^sep_list " " sot args^")"
 
 let string_of_decl_pair (tag, t) = tag^": "^string_of_type t
@@ -46,7 +46,8 @@ let rec string_of_expr e =
   let soe = string_of_expr in
   match e with 
   | EString s -> "\""^s^"\""
-  | ENum n -> string_of_int n
+  | ENat n -> string_of_int n
+  | EInt n -> (if n<=0 then "+" else "")^string_of_int n
   | ETez n -> Printf.sprintf "TZ%d.%02d" (n/100) (n mod 100)
   | ETime s -> s
   | ESig s -> "sig:"^s

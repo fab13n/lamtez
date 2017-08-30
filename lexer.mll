@@ -47,7 +47,8 @@ rule read = parse
 | "or" {OR} | "and" {AND} | "xor" {XOR}
 | "\\/" {FORALL}
 | string {STRING(trim lexbuf 1 1)}
-| num {NUM(int_of_string (Lexing.lexeme lexbuf))}
+| ('+'|'-') num {INT(int_of_string (Lexing.lexeme lexbuf))}
+| num {NAT(int_of_string (Lexing.lexeme lexbuf))}
 | tz_cents {TEZ(int_of_tz_cents(Lexing.lexeme lexbuf))}
 | tz_int {TEZ(int_of_tz_int(Lexing.lexeme lexbuf))}
 | time {TIMESTAMP(Lexing.lexeme lexbuf)}
