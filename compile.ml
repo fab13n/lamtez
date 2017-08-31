@@ -9,7 +9,7 @@ type mExpr =
 | MEPrim of string list * mExpr list
 | MESeq of mExpr list
 
-type stack = ieVar option list
+type stack = (ieVar option * iType) list
 
 let dup n = "D"^String.make n 'U'^"P"
 let rec peek = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "DIP { %s }; SWAP" (peek (n-1))
@@ -17,7 +17,7 @@ let rec poke = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "SWAP; DIP { %s }" 
 
 let rec get_level stk v = match stk with
 | [] -> None
-| Some v' :: _ when v=v' -> Some 1
+| (Some v', _) :: _ when v=v' -> Some 1
 | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
 
 
@@ -37,45 +37,48 @@ let rec compile_iType t =
 
 
 
-let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) = 
+let rec compile_iTypedExpr (stk:stack) ((ie, it): iTypedExpr) : (stack * string) = 
   if _DEBUG_ then begin
-    print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^string_of_iExpr e);
+    print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^string_of_iExpr ie);
     incr debug_indent
   end;
-  let stk, code = match e with
-  | IELit x -> (match t with ITPrim(t_name, []) -> None::stk, sprintf "PUSH %s %s" t_name x | _ -> unsound "litteral type")
+  let stk, code = match ie with
+  | IELit x -> (match it with ITPrim(t_name, []) -> (None, it)::stk, sprintf "PUSH %s %s" t_name x | _ -> unsound "litteral type")
   | IEId name -> begin match get_level stk name with
-    | Some n -> Some name::stk, dup n (* Bound variable; remember its name on stack too (might help making shorter DUU*Ps). *)
-    | None -> None::stk, compile_primitive stk name [] t (* Free variable, must be a primitive. *)
+    | Some n -> (Some name, it)::stk, dup n (* Bound variable; remember its name on stack too (might help making shorter DUU*Ps). *)
+    | None -> (None, it)::stk, compile_primitive stk name [] it (* Free variable, must be a primitive. *)
     end
-  | IELambda(params, body) -> compile_IELambda stk params body t
-  | IELetIn(v, e0, e1) ->
-    let stk, c0 = compile_iTypedExpr stk e0 in
-    let stk = Some v :: List.tl stk in (* name the value just computed *)
-    let stk, c1 = compile_iTypedExpr stk e1 in
+  | IELambda(params, body) -> compile_IELambda stk params body it
+  | IELetIn(v, ie0, ie1) ->
+    let stk, c0 = compile_iTypedExpr stk ie0 in
+    let stk = (Some v, snd ie0) :: List.tl stk in (* name the value just computed *)
+    let stk, c1 = compile_iTypedExpr stk ie1 in
     let stk = match stk with r :: v :: stk -> r :: stk | _ -> unsound "stack too shallow" in
     stk, c0^"# let "^v^" = ... in ...\n"^c1^"DIP { DROP } # remove "^v^"\n"
-  | IEApp(f, args) -> compile_IEApp stk f args t
+  | IEApp(f, args) -> compile_IEApp stk f args it
   | IEProduct fields ->
     let stk', code = List.fold_left 
       (fun (stk, code) field -> let stk, code' = compile_iTypedExpr stk field in stk, code^code')
       (stk, "") (List.rev fields) in
-    None::stk, code^Compile_composite.tuple(List.length fields)
-  | IESum(i, n, content) -> compile_IESum stk i n content t
-  | IEProductGet(e, i, n) -> let _, code = compile_iTypedExpr stk e in None::stk, code^Compile_composite.product_get i n
+    (None, it)::stk, code^Compile_composite.tuple(List.length fields)
+  | IESum(i, n, content) -> compile_IESum stk i n content it
+  | IEProductGet(ie, i, n) -> 
+    let _, code = compile_iTypedExpr stk ie in 
+    (None, it)::stk, code^Compile_composite.product_get i n
   | IEProductSet(e0, i, n, e1) ->
     let stk', c0 = compile_iTypedExpr stk e0 in 
     let stk', c1 = compile_iTypedExpr stk e1 in (* TODO sure that the stask can't be messsed up? *)
-    None::stk, c0^c1^Compile_composite.product_set i n
-  | IESumCase(test, cases) -> compile_IESumCase stk test cases
+    (None, it)::stk, c0^c1^Compile_composite.product_set i n
+  | IESumCase(test, cases) -> compile_IESumCase stk test cases it
   in
   if _DEBUG_ then begin
     decr debug_indent;
     print_endline (String.make (2 * !debug_indent) ' '^"Result: "^Code_format.single_line code)
   end;
   let last_char = String.get code (String.length code -1)  in
-  let stk_comment = " : "^String.concat " : " (List.map (function None -> "." | Some x -> x) (List.tl stk)) in
-  let code = if last_char='\n' then code else code^"; # "^string_of_untyped_iExpr e^stk_comment^"\n" in
+  let string_of_stk_item (v, t) = (match v with None -> "" | Some x -> x^": ")^compile_iType t in
+  let comment = sep_list ", " string_of_stk_item (List.tl stk) in
+  let code = if last_char='\n' then code else code^"; # "^string_of_untyped_iExpr ie^", "^comment^"\n" in
   stk, code
 
 
@@ -143,12 +146,12 @@ and compile_primitive stk name args t_result =
     | _ -> not_impl ("Primitive "^name^" not implemented")
 
 
-and compile_IELambda stk params body typeT =
+and compile_IELambda stk params body it_lambda =
   match params, body with
   | [(v_param, t_param)], (e_body, t_body) ->
     (* TODO check that there's no free variable. *)
-    let stk, code = compile_iTypedExpr [Some v_param] body in
-    None::List.tl stk, sprintf "LAMBDA %s %s { %s }" 
+    let stk, code = compile_iTypedExpr [Some v_param, t_param] body in
+    (None, it_lambda)::List.tl stk, sprintf "LAMBDA %s %s { %s }" 
       (compile_iType t_param) (compile_iType t_body) code
   | _::_, _ -> unsupported "nested (multi-parameter) lambdas"
   | [], _ -> unsound "IELambda without parameter?!"
@@ -163,7 +166,7 @@ and compile_IEApp stk f args t_result = match f with
       let stk', c1 = compile_iTypedExpr stk' amount in
       let stk', c2 = compile_iTypedExpr stk' contract in
       let stk', c3 = compile_iTypedExpr stk' storage in
-      [None],
+      [None, t_result],
       c0^c1^c2^c3^  
       "DIIIIP { "^sep_list "; " (fun _ -> "DROP") stk^"} # Clean rest of stack \n"^
       "TRANSFER_TOKENS; PAIR"
@@ -171,30 +174,33 @@ and compile_IEApp stk f args t_result = match f with
     end
   | (IEId(name), t_f) -> begin match get_level stk name with
     | Some n -> not_impl "user-defined lambda" (* user-defined lambda *)
-    | None -> None::stk, compile_primitive stk name args t_result
+    | None -> (None, t_result)::stk, compile_primitive stk name args t_result
     end
   | _ -> unsound "Applying a non-function"
 
 
-and compile_IESum stk i n content t =
-  match t with 
+and compile_IESum stk i n content it =
+  let ct = compile_iType in
+  match it with 
   | ITSum(Some(sum_type_name, sum_type_args), lazy types) -> 
     begin match sum_type_name, sum_type_args, i, n with
-    | "bool",   [],   0, 2 -> None::stk, "PUSH bool False"
-    | "bool",   [],   1, 2 -> None::stk, "PUSH bool True"
-    | "option", [t'], 0, 2 -> None::stk, "NONE "^compile_iType t'
-    | "option", [t'], 1, 2 -> let stk, code = compile_iTypedExpr stk content in None::List.tl stk, code^"SOME"
-    | "list",   [t'], 0, 2 -> None::stk, "NIL "^compile_iType t'
-    | "list",   [t'], 1, 2 -> let stk, code = compile_iTypedExpr stk content in None::List.tl stk, code^"DUP; CAR; SWAP; CDR; CONS"
+    | "bool",   [],   0, 2 -> (None, it) :: stk, "PUSH bool False"
+    | "bool",   [],   1, 2 -> (None, it) :: stk, "PUSH bool True"
+    | "option", [t'], 0, 2 -> (None, it) :: stk, "NONE "^compile_iType t'
+    | "list",   [t'], 0, 2 -> (None, it) :: stk, "NIL "^compile_iType t'
+    | "option", [t'], 1, 2 -> 
+      let stk, code = compile_iTypedExpr stk content in (None, it)::List.tl stk, code^"SOME"
+    | "list",   [t'], 1, 2 -> 
+      let stk, code = compile_iTypedExpr stk content in (None, it)::List.tl stk, code^"DUP; CAR; SWAP; CDR; CONS"
     | _ ->
       let types = List.map compile_iType types in
       let stk, code = compile_iTypedExpr stk content in
-      None::List.tl stk, code^Compile_composite.sum i n types
+      (None, it) ::List.tl stk, code^Compile_composite.sum i n types
     end
   | _ -> unsound "Not a sum type"
 
 
-and compile_IESumCase stk test cases =
+and compile_IESumCase stk test cases it =
   let stk, code = compile_iTypedExpr stk test in
   let stk = List.tl stk in (* cases are executed with the test removed from stack. *)
   let sum_type_name = match snd test with ITSum(Some (name, _), _) -> name | _ -> unsound "Not a sum type" in
@@ -202,33 +208,33 @@ and compile_IESumCase stk test cases =
   | "bool", [(_, _, if_false); (v, _, if_true)] ->
     let _, if_false = compile_iTypedExpr stk if_false in
     let _, if_true = compile_iTypedExpr (stk) if_true in
-    None::stk, sprintf "%sIF { %s}\n{ %s}" code if_true if_false (* TODO make sure unit-bouns variables in cases aren't used *)
-  | "list", [(_, _, if_nil); (v, _, if_cons)] ->
-    let _, if_cons = compile_iTypedExpr (Some v::stk) if_cons in
-    let _, if_nil = compile_iTypedExpr (stk) if_nil in
-    None::stk, sprintf "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n}\n{ %s}" code v if_cons if_nil
-  | "option", [(_, _, if_none); (v, _, if_some)] ->
-    let _, if_some = compile_iTypedExpr (Some v::stk) if_some in
-    let _, if_none = compile_iTypedExpr (stk) if_none in
-    None::stk, sprintf "%sIF_NONE { %s}\n{ # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
+    (None, it)::stk, sprintf "%sIF { %s}\n{ %s}" code if_true if_false (* TODO make sure unit-bouns variables in cases aren't used *)
+  | "list", [(_, _, if_nil); (v, t_v, if_cons)] ->
+    let _, if_cons = compile_iTypedExpr ((Some v, t_v)::stk) if_cons in
+    let _, if_nil = compile_iTypedExpr stk if_nil in
+    (None, it)::stk, sprintf "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n}\n{ %s}" code v if_cons if_nil
+  | "option", [(_, _, if_none); (v, t_v, if_some)] ->
+    let _, if_some = compile_iTypedExpr ((Some v, t_v)::stk) if_some in
+    let _, if_none = compile_iTypedExpr stk if_none in
+    (None, it)::stk, sprintf "%sIF_NONE { %s}\n{ # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
   | _ ->
-    let f i (v, t, e)  =
-      sprintf "# | %d(%s):\n%sDIP { DROP }; # remove %s\n"
-        i v (snd (compile_iTypedExpr (Some v::stk) e)) v in
-    None::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
+    let f i (v, t_v, ie)  =
+      sprintf "# | <%d>(%s):\n%sDIP { DROP }; # remove %s\n"
+        i v (snd (compile_iTypedExpr ((Some v, t_v)::stk) ie)) v in
+    (None, it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
 
 
 
 let compile_contract = function
   | IELambda(
-    [param, tparam; storage, tstorage], 
-    (body, (ITProduct(None, lazy [tresult; tstorage'])) as typed_body)), _
-    when tstorage=tstorage' ->
-    let stk, code = compile_iTypedExpr [Some storage; Some param] typed_body in
-    let code = sprintf "DUP; CAR; SWAP; CDR # %s/%s split\n%sDIP { %s } # stack cleanup\n"
-      param storage code (sep_list "; " (fun _ -> "DROP") (List.tl stk)) in
+    [(param, t_param); (storage, t_storage)], 
+    (e_body, (ITProduct(None, lazy [t_result; t_storage'])) as body)), _
+    when t_storage=t_storage' ->
+    let stk, code = compile_iTypedExpr [(Some storage, t_storage); (Some param, t_param)] body in
+    let code = sprintf "DUP; CAR; SWAP; CDR # %s/%s split\n%sDIP { %s } # remove %s and %s\n"
+      param storage code (sep_list "; " (fun _ -> "DROP") (List.tl stk)) param storage in
     let code = sprintf "parameter %s;\nstorage %s;\nreturn %s;\ncode { %s}\n"
-                (compile_iType tparam) (compile_iType tstorage) (compile_iType tresult) code in
+                (compile_iType t_param) (compile_iType t_storage) (compile_iType t_result) code in
     let code = Code_format.indent '{' '}' code in
     code
   | _ -> unsound "Bad contract type"
