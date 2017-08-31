@@ -45,7 +45,6 @@ rule read = parse
 | "let" {LET}
 | "in" {IN}
 | "<-" {LEFT_ARROW}
-| "or" {OR} | "and" {AND} | "xor" {XOR}
 | "\\/" {FORALL}
 | string {STRING(trim lexbuf 1 1)}
 | ('+'|'-') num {INT(int_of_string (Lexing.lexeme lexbuf))}
@@ -54,14 +53,19 @@ rule read = parse
 | tz_int {TEZ(int_of_tz_int(Lexing.lexeme lexbuf))}
 | time {TIMESTAMP(Lexing.lexeme lexbuf)}
 | sig {SIGNATURE(trim lexbuf 4 0)}
-| id {ID(Lexing.lexeme lexbuf)}
-| tag {TAG(Lexing.lexeme lexbuf)}
+
+| '.' d+ {TUPLE_GET(int_of_string (trim lexbuf 1 0))}
+| '.' tag {PRODUCT_GET(trim lexbuf 1 0)}
+
 | '(' {LPAREN} | ')' {RPAREN} | '\\' {LAMBDA} | "->" {ARROW}
 | ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '?' {CASE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}
-| '.' d+ {TUPLE_GET(int_of_string (trim lexbuf 1 0))}
-| '.' tag {PRODUCT_GET(trim lexbuf 1 0)}
+| "or" {OR} | "and" {AND} | "xor" {XOR}
+
+| id {ID(Lexing.lexeme lexbuf)} (* must be after alhabetic keywords *)
+| tag {TAG(Lexing.lexeme lexbuf)}
+
 | eof {EOF}
 
 
