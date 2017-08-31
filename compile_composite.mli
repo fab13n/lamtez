@@ -1,4 +1,4 @@
-val sum : int -> int -> string
+val sum : int -> int -> string list -> string
 val sum_case : string list -> string
 (* val product : string list -> string *)
 val tuple: int -> string

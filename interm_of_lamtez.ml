@@ -20,7 +20,7 @@ type iType =
 | ITPrim of itVar * iType list
 | ITLambda of iType list * iType
 | ITProduct of (itVar * iType list) option * iType list Lazy.t
-| ITSum of (itVar * iType list) option * iType list Lazy.t
+| ITSum of (itVar * iType list) option * iType list Lazy.t (* TODO name and args shouldn't be optional. *)
 
 type ieVar = string
 

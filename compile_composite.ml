@@ -33,12 +33,43 @@ let rec paths = function
     List.map (fun x -> false::x) (paths n_left) @
     List.map (fun x -> true::x) (paths n_right)
 
+(* Generate a type corresponding to a product/sum.
+ * Can be used to generate strings or other structures through maker functions.
+ *)
+let type_ make_node make_leaf fields =
+  let pp = paths (List.length fields) in
+  let pp_n = List.map2 (fun a b -> a, b) pp fields in
+  let rec build = function
+    | [[], field] -> make_leaf field
+    | pp_n ->
+      let pp_t, pp_f = List.partition (fun x -> List.hd (fst x)) pp_n in
+      let trim = List.map (function (_::p, n) -> (p, n) | _ -> assert false) in
+      make_node (build (trim pp_f)) (build (trim pp_t)) in
+   build pp_n   
+
+let sum_type, product_type = 
+  let make_node op a b = "("^op^" "^a^" "^b^")" and make_leaf x = x in
+  type_ (make_node "or") make_leaf, type_ (make_node "pair") make_leaf
+
+
+type type_tree = Node of type_tree*type_tree | Leaf of string
+let tree_of_types types = type_ (fun a b -> Node(a, b)) (fun x->Leaf x) types
+let rec string_of_tree op = function
+  | Leaf x -> x 
+  | Node(a, b) -> "("^op^" "^string_of_tree op a^" "^string_of_tree op b^")"
+
 (* Returns the sequence of LEFT/RIGHT operators which will turn the top-of-stack
  * into the `i`th alternative out of `n`. *)
-let sum i n =
-  let p = List.nth (paths n) i in
-  let l = List.map (fun b -> if b then "RIGHT" else "LEFT") p in
-  List.fold_left (fun acc x-> acc^" "^x^";") "" l
+let sum i n types =
+  let path = List.nth (paths n) i in
+  let rec f acc tree path = match tree, path with
+    | Node(l, r), true  :: path' -> f (("RIGHT "^string_of_tree "or" l)::acc) r path' 
+    | Node(l, r), false :: path' -> f (("LEFT "^string_of_tree "or" r)::acc) l path' 
+    | Leaf _, [] -> acc
+    | Leaf _, _::_ | Node _, [] -> assert false
+  in
+  let code = f [] (tree_of_types types) path in
+  String.concat "; " code
   (* TODO List.rev? *)
 
 (* Generates the nested `IF_LEFT{ }{ }` operators which will run the code in cases
@@ -52,7 +83,7 @@ let sum_case cases =
     | pp_n ->
       let pp_t, pp_f = List.partition (fun x -> List.hd (fst x)) pp_n in
       let trim = List.map (function (_::p, n) -> (p, n) | _ -> assert false) in
-      "IF_LEFT { " ^ build (trim pp_f) ^ " } { " ^ build (trim pp_t) ^ " }" in
+      "IF_LEFT { " ^ build (trim pp_f) ^ " }\n{ " ^ build (trim pp_t) ^ " }\n" in
    build pp_n   
 
 (* Turns the `n`  elements on the stack into a n-tuple.
@@ -87,19 +118,6 @@ let product_get i n =
   let x = List.fold_left (fun acc b -> acc^if b then "D" else "A") "" p in
   "C"^x^"R"
 
-(* Generate the Michelson type corresponding to a product/sum. *)
-let type_ t fields =
-  let pp = paths (List.length fields) in
-  let pp_n = List.map2 (fun a b -> a, b) pp fields in
-  let rec build level = function
-    | [[], field] -> field
-    | pp_n ->
-      let pp_t, pp_f = List.partition (fun x -> List.hd (fst x)) pp_n in
-      let trim = List.map (function (_::p, n) -> (p, n) | _ -> assert false) in
-      "("^t^" " ^ build (level) (trim pp_f) ^ " " ^ build (level+1) (trim pp_t) ^ ")" in
-   build 0 pp_n   
-
-let sum_type = type_ "or" and product_type = type_ "pair"
 
 (* Generate a code transforming `f1 : tuple[i/n=f0] : _` into `tuple[i/n=f1] : _`. *)
 let product_set i n =
