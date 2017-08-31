@@ -30,18 +30,19 @@ currified/uncurrified as needed). Parameters can be either simple
 names (and their type is then inferred) or explicited with the syntax
 `(name: type)`.
 
-TODO: I probably can't have polymorphic functions, because they
+TODO: I can't have polymorphic functions, because they
 wouldn't typecheck in Michelson. Otherwise, explicit `Forall`
-operators will be needed.
+operators would be needed. I'll keep supporting them in Lamtez,
+in case Michelson evolves favorably.
 
 Examples:
-```
-\x: x
-\x y: x + y
-\(x: nat) (y:nat): x - y
-\(x: nat) y: x * y
-\amount parameter storage: ((), map-update parameter (Some amount) storage)
-```
+
+    \x: x
+    \x y: x + y
+    \(x: nat) (y:nat): x - y
+    \(x: nat) y: x * y
+    \amount parameter storage: ((), map-update parameter (Some amount) storage)
+
 
 #### Variables
 
@@ -59,15 +60,14 @@ are used to force it otherwise.  Function application binds tighter
 than most things, including infix operators.
 
 Examples:
-```
-f x
-f(x)
-f x y
-(f(x)y)
-f x + f y # Same as f(x) + f(y)
-f (x + y) (x + z)
-(\x: x + 1) 2
-```
+
+    f x
+    f(x)
+    f x y
+    (f(x)y)
+    f x + f y # Same as f(x) + f(y)
+    f (x + y) (x + z)
+    (\x: x + 1) 2
 
 #### Let/in: local variables
 
@@ -75,11 +75,11 @@ ML-style local variables, `let x=a in b` evaluates `b` with `x` set to `a`.
 Equivalent, execution-wise, to `(\x:b) a`.
 
 Example:
-```
-let x = 32 in
-let y = 10 in
-x + y
-```
+
+    let x = 32 in
+    let y = 10 in
+    x + y
+
 #### Tuples (unlabelled cartesian products)
 
 Whereas Michelson on supports pairs, Lamtez supports tuples of length
@@ -113,13 +113,23 @@ commas and surrounded by braces.
 Access to product fields are made with a `.Label` suffix, which binds
 as tightly as unlabelled product accessors.
 
-Example:
-```
-type coordinates = Latitude int * Longitude int
+Finally, one can generate a product from another: a product which is
+equal to `p` except that field `f` has value `42` can be created
+through the syntax `p.f<-42`.
 
-let p = {Latitude 43500, Longitude 1500 } in
-p.Latitude * p.Latitude + p.Longitude * p.Longitude
-```
+Example:
+
+    type coordinates = Latitude int * Longitude int
+
+    let p = {Latitude 43500, Longitude 1500 } in
+    let i_miss_trigonometry = p.Latitude * p.Latitude + p.Longitude * p.Longitude in
+
+    let p_2_degrees_north = p.Latitude <- p.Latitude+2 in
+    let p_south_west = 
+      (p.Latitude <- p.Latitude - 1)
+        .Longitude <-p.Longitude+1 in
+    
+    (p, p_2_degrees_north, p_south_west)
 
 #### Sum types
 
@@ -148,17 +158,16 @@ if/then/else operations should be encoded as sum accessors, as shown
 in the example below.
 
 Examples:
-```
-type operation = Withdrawal tez + GetBalance unit + Deposit tez
-\amount operation storage:
-  ( operation ?
-  | Withdrawal a: (None, storage - a)
-  | GetBalance: (Some storage, storage)
-  | Deposit: (None, storage + a)
-  )
 
-now > date ? True: "OK" | False: "Not yet"
-```
+    type operation = Withdrawal tez + GetBalance unit + Deposit tez
+    \amount operation storage:
+      ( operation ?
+      | Withdrawal a: (None, storage - a)
+      | GetBalance: (Some storage, storage)
+      | Deposit: (None, storage + a)
+      )
+
+    now > date ? True: "OK" | False: "Not yet"
 
 #### Binary and unary operators
 
@@ -180,6 +189,23 @@ Lamtez supports the same literals as Michelson:
 #### Type annotations
 
 TODO
+
+#### Storage
+
+Michelson has a storage value; it is stored on the blockchain, passed as a parameter
+to contracts, and contracts return an updated storage object which is stored back on
+the blockchain.
+
+As non-trivial programs typically store multiple values, the store is generally a
+product type. Since Lamtez might need to store additional fields in the store,
+contract developpers are expected to declare and use the field they need through
+a dedicated `@` syntax:
+
+* a sequence of `@name: type` declarations after type declarations declare every storage
+  field type and name;
+* in the contract, `@name` returns the content of field `name`.
+* fields can be updated with the syntax `@name <- expr` (TODO: explain the monad-like
+  restrictions to storage updates, what and why)
 
 ### Type syntax
 
@@ -218,22 +244,23 @@ Type annotations can be the following:
 
 ### Contracts
 
-A contract with parameter type `p`, storage type `s` and result type
-`r` is represented in a file as a sequence of type definitions,
-followed by an expression of type `tez -> p -> s -> (r * s)`. The
-first parameter, of type `tez`, is the amount received by the contract
-when called.
+A contract with parameter type `p`, and result type
+`r` is represented in a file as a sequence of type declarations,
+then a sequence of store field declarations, then an expression 
+of type `p -> r`. The
+
 
 Example:
-```
-type operation = Withdrawal tez + GetBalance unit + Deposit tez
-\amount operation storage:
-  ( operation ?
-  | Withdrawal a: (None, storage - a)
-  | GetBalance: (Some storage, storage)
-  | Deposit: (None, storage + a)
-  )
-```
+
+    type operation = Withdrawal tez + GetBalance unit + Deposit tez
+    @store: tez
+
+    \amount operation:
+      ( operation ?
+      | Withdrawal a: @store <- @store - a; None
+      | GetBalance: Some storage
+      | Deposit: @store <- @store + self-amount
+      )
 
 ### Semantics
 
