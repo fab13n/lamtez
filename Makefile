@@ -24,5 +24,5 @@ debug: sanity
 sanity:
 	which menhir
 
-test: native
-	./main.native '\x: x+1'
+test: debug native
+	./tests/run-tests.sh
