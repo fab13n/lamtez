@@ -60,14 +60,15 @@ let rec string_of_expr e =
   | ELetIn(v, t, e0, e1) -> "let ("^v^": "^string_of_type t^") = "^soe e0^" in "^soe e1
   | EApp(_) as e -> let rec f = function EApp(a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
   | ETuple(list) -> "(" ^ sep_list ", " soe list ^ ")"
-  | ETupleGet(e, tag) -> soe e ^"."^string_of_int tag
+  | ETupleGet(e0, tag) -> soe e0 ^"."^string_of_int tag
   | EProduct(pairs) -> "{"^sep_list ", " (fun (tag, e) -> tag^" "^soe e) pairs^"}"
-  | EProductGet(t, tag) -> soe t^"."^tag
-  | ESum(tag, t) -> tag^" "^soe t
-  | ESumCase(t, triplets) -> "("^soe t^" ? "^sep_list " | " (fun (tag, (v, e)) -> tag^": "^soe e) triplets^")"
-  | EBinOp(a, op, b) -> "("^soe a^" "^string_of_binop op^" "^soe b^")"
-  | EUnOp(op, a) -> string_of_unop op^soe a
-  | ETypeAnnot(e, t) -> "("^soe e^": "^string_of_type t^")"
+  | EProductGet(e0, tag) -> soe e0^"."^tag
+  | EProductSet(e0, tag, e1) -> soe e0^"."^tag^" <- "^soe e1
+  | ESum(tag, e0) -> tag^" "^soe e0
+  | ESumCase(e0, triplets) -> "("^soe e0^" ? "^sep_list " | " (fun (tag, (v, e)) -> tag^": "^soe e) triplets^")"
+  | EBinOp(e0, op, e1) -> "("^soe e0^" "^string_of_binop op^" "^soe e1^")"
+  | EUnOp(op, e0) -> string_of_unop op^soe e0
+  | ETypeAnnot(e0, t) -> "("^soe e0^": "^string_of_type t^")"
 
 let string_of_program (d, e) =
   sep_list "\n" string_of_decl d ^ "\n" ^

@@ -35,6 +35,7 @@ and iExpr =
 | IEProduct of iTypedExpr list
 | IESum of int * int * iTypedExpr
 | IEProductGet of iTypedExpr * int * int
+| IEProductSet of iTypedExpr * int * int * iTypedExpr
 | IESumCase of iTypedExpr * (ieVar * iType * iTypedExpr) list
 (* TODO add support for options and lists? *)
 
@@ -63,6 +64,7 @@ let rec string_of_iExpr =
   | IEProduct x  -> "("^sep_list ", " et x^")"
   | IESum (i, n, x) -> sprintf "{%d/%d} %s" i n (et x)
   | IEProductGet(x, i, n) -> sprintf "%s.{%d/%d}" (et x) i n
+  | IEProductSet(x, i, n, y) -> sprintf "%s.{%d/%d} <- %s" (et x) i n (et y)
   | IESumCase(e, cases) -> 
     let f (var, it, e_case) = "["^var^":"^t it^"] -> "^et e_case in
     "("^et e^" ? "^sep_list " | " f cases^")"
@@ -80,6 +82,7 @@ let rec string_of_untyped_iExpr e =
   | IEProduct x  -> "("^sep_list ", " r x^")"
   | IESum (i, n, x) -> sprintf "%d(%s)" i (r x)
   | IEProductGet(x, i, n) -> sprintf "%s.%d" (r x) i
+  | IEProductSet(x, i, n, y) -> sprintf "%s.%d <- %s" (r x) i (r y)
   | IESumCase(e, cases) ->
     let f i (v, _, e_case) = sprintf "%d(%s): %s" i v (r e_case) in
     let cases = List.mapi f cases in
@@ -193,6 +196,8 @@ let rec compile_exprT ctx e =
     let tags = get_product_tags ctx t_product in
     let tag2num = List.mapi (fun i t -> t, i) tags in
     IEProductGet(c e_product, List.assoc tag tag2num, List.length tags), it
+
+  | EProductSet(e_product, tag, e_field) -> not_impl "product update"
 
   | ESum(tag, e) ->
     let tags = get_sum_decl_cases ctx e_type in

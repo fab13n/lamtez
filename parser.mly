@@ -11,7 +11,7 @@ open Tree
 %token <string> TAG
 %token LPAREN RPAREN
 %token LAMBDA ARROW FORALL
-%token COMMA COLON
+%token COMMA COLON LEFT_ARROW
 %token <int> TUPLE_GET
 %token <string> PRODUCT_GET
 %token LBRACE RBRACE
@@ -71,6 +71,7 @@ expr0:
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(p);}
 | LET p=parameter EQ e0=expr IN e1=expr {ELetIn(fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(e, tag)}
+| e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(e, n)}
 
 expr:

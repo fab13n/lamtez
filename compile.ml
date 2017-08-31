@@ -1,3 +1,4 @@
+open Printf
 open Utils
 open Interm_of_lamtez
 
@@ -17,6 +18,14 @@ let slist sep f list = match list with
 
 let dup n =
   "D"^String.make n 'U'^"P"
+
+let rec peek = function
+| 0 -> "" | 1 -> "SWAP"
+| n -> sprintf "DIP { %s }; SWAP" (peek (n-1))
+
+let rec poke = function
+| 0 -> "" | 1 -> "SWAP"
+| n -> sprintf "SWAP; DIP { %s }" (poke (n-1))
 
 let simple_primitives = [
   "now", "NOW"; "unit", "UNIT"; "fail", "FAIL";
@@ -50,7 +59,7 @@ let rec compile_iType t =
   | ITSum(_, lazy fields) -> Compile_composite.sum_type (List.map c fields)
 
 let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) = 
-  let c = compile_iTypedExpr stk in
+  let c = compile_iTypedExpr in
   if _DEBUG_ then begin
     print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^string_of_iExpr e);
     incr debug_indent
@@ -65,26 +74,25 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     end
   | IELambda([param, tparam], (_, tbody as body)), _ ->
     (* TODO check that there's no free variable. *)
-    let ctx, code = compile_iTypedExpr [Some param] body in
+    let ctx, code = c [Some param] body in
       None::stk, s "LAMBDA %s %s { %s }" 
         (compile_iType tparam) (compile_iType tbody) code
-  | IELambda(vars, body), _ -> unsupported "nested lambdas"
+  | IELambda(vars, body), _ -> unsupported "nested (multi-parameter) lambdas"
   | IELetIn(v, e0, e1), _ ->
-    let stk, c0 = compile_iTypedExpr stk e0 in
-    let stk, c1 = compile_iTypedExpr (Some v :: List.tl stk) e1 in
+    let stk, c0 = c stk e0 in
+    let stk, c1 = c (Some v :: List.tl stk) e1 in
     stk, c0^"# := "^v^"\n"^c1^"DIP { DROP } # remove "^v^"\n"
   | IEApp((IELambda(params, body), tl), args), _ -> not_impl "apply lambda"
-  | IEApp((IEId "contract-call", _), [param; amount; contract; storage]), _ ->
+  | IEApp((IEId "contract-call", _), [contract_arg; amount; contract; storage]), _ ->
     (* param -> tez -> contract param result -> storage -> result*storage *)
-    let code =
-      snd(compile_iTypedExpr stk param) ^
-      snd(compile_iTypedExpr (None::stk) amount) ^
-      snd(compile_iTypedExpr (None::None::stk) contract) ^
-      snd(compile_iTypedExpr (None::None::None::stk) storage) ^
-      "DIIIIP { "^sep_list "; " (fun _ -> "DROP") stk^"} # Clean rest of stack \n"^
-      "TRANSFER_TOKENS; PAIR"^
-      "DIP { " ^"} # restore dummy stack" in
-    [None], code (* Now the stack only contains the result and updated storage *)
+    let stk', c0 = c stk contract_arg in
+    let stk', c1 = c stk' amount in
+    let stk', c2 = c stk' contract in
+    let stk', c3 = c stk' storage in
+    [None],
+    c0^c1^c2^c3^  
+    "DIIIIP { "^sep_list "; " (fun _ -> "DROP") stk^"} # Clean rest of stack \n"^
+    "TRANSFER_TOKENS; PAIR"
   | IEApp((IEId(name), tl), args), _ -> begin match get_level stk name with
     | Some n -> not_impl "user-defined lambda" (* user-defined lambda *)
     | None -> None::stk, compile_primitive stk name args t
@@ -110,11 +118,15 @@ let rec compile_iTypedExpr (stk:stack) ((e, t): iTypedExpr) : (stack * string) =
     let stk, code = compile_iTypedExpr stk content in
     stk, code^"DUP; CAR; SWAP; CDR; CONS"
   | IESum(i, n, content), _ ->
-    let _, code = c content in 
+    let _, code = c stk content in 
     None::stk, code^Compile_composite.sum i n
   | IEProductGet(e, i, n), _ ->
-    let _, code = c e in 
+    let _, code = c stk e in 
     None::stk, code^Compile_composite.product_get i n
+  | IEProductSet(e0, i, n, e1), _ ->
+    let stk', c0 = c stk e0 in
+    let stk', c1 = c stk e1 in
+    None::stk, c0^c1^Compile_composite.product_set i n
   | IESumCase((e_test, t_test) as test, cases), _ ->
      let stk, code = compile_iTypedExpr stk test in
      let stk = List.tl stk in (* cases are executed with the test removed from stack. *)

@@ -42,6 +42,7 @@ type exprT =
 
   | EProduct of (tag*exprT) list
   | EProductGet of exprT * tag
+  | EProductSet of exprT * tag * exprT
   
   | ESum of tag * exprT
   | ESumCase of exprT * (tag * (evar * exprT)) list
@@ -84,6 +85,7 @@ let rec replace_evar var e e' =
   | ETupleGet(e0, tag) -> ETupleGet(r e0, tag)
   | EProduct(pairs) -> EProduct (List.map (fun (tag, e) -> (tag, r e)) pairs)
   | EProductGet(e0, tag) -> EProductGet(e0, tag)
+  | EProductSet(e0, tag, e1) -> EProductSet(r e0, tag, r e1)
   | ESum(tag, e0) -> ESum(tag, r e0)
   | ESumCase(e0, cases) -> 
     let f (tag, (var', ec)) = if var'=var then (tag, (var, ec)) else (tag, (var, r ec)) in
@@ -105,40 +107,40 @@ let replace_tvars tvars types t = List.fold_left2
     (fun t v t' -> replace_tvar v t' t)
     t tvars types
 
-
 (* Rename variables whenever necessary so that no variable binder
  * shadows another. *)
-let rec unshadow scoped term =
+let rec unshadow scoped e =
   let r = unshadow scoped in
-  match term with
-  | EString _ | ENat _| EInt _ | ETez _ | ETime _ | ESig _ | EId _ -> term
-  | ELambda(v, t, term') when List.mem v scoped ->
+  match e with
+  | EString _ | ENat _| EInt _ | ETez _ | ETime _ | ESig _ | EId _ -> e
+  | ELambda(v, t, e0) when List.mem v scoped ->
     let v' = fresh_var ~prefix:v () in
-    ELambda(v', t, replace_evar v (EId v') term')
-  | ELambda(v, t, term') ->
-    ELambda(v, t, unshadow (v::scoped) term')
+    ELambda(v', t, replace_evar v (EId v') e0)
+  | ELambda(v, t, e0) ->
+    ELambda(v, t, unshadow (v::scoped) e0)
   | ELetIn(v, t, e0, e1) when List.mem  v scoped ->
     let v' = fresh_var ~prefix: v () in
     ELetIn(v', t, r e0, replace_evar v (EId v') e1)
   | ELetIn(v, t, e0, e1) ->
     ELetIn(v, t, r e0, unshadow (v::scoped) e1)
-  | EApp(t0, t1) -> EApp(r t0, r t1)
+  | EApp(e0, e1) -> EApp(r e0, r e1)
   | ETuple(list) -> ETuple(List.map r list)
-  | ETupleGet(t, tag) -> ETupleGet(r t, tag)
-  | EProduct(pairs) -> EProduct (List.map (fun (tag, t) -> (tag, r t)) pairs)
-  | EProductGet(t, tag) -> EProductGet(t, tag)
-  | ESum(tag, t) -> ESum(tag, r t)
-  | ESumCase(t, pairs) -> 
-    let f (tag, (v, t)) = 
+  | ETupleGet(e0, tag) -> ETupleGet(r e0, tag)
+  | EProduct(pairs) -> EProduct (List.map (fun (tag, e) -> (tag, r e)) pairs)
+  | EProductGet(e, tag) -> EProductGet(r e, tag)
+  | EProductSet(e0, tag, e1) -> EProductSet(r e0, tag, r e1)
+  | ESum(tag, e0) -> ESum(tag, r e0)
+  | ESumCase(e0, pairs) -> 
+    let f (tag, (v, e)) = 
       if List.mem v scoped then
         let v' = fresh_var ~prefix:v () in
-        (tag, (v, replace_evar v (EId v') t))
-      else (tag, (v, unshadow (v::scoped) t))
+        (tag, (v, replace_evar v (EId v') e))
+      else (tag, (v, unshadow (v::scoped) e))
     in
-    ESumCase(r t, (List.map f pairs))
-  | EBinOp(a, op, b) -> EBinOp(r a, op, r b)
-  | EUnOp(op, a) -> EUnOp(op, r a)
-  | ETypeAnnot(t, a) -> ETypeAnnot(r t, a)
+    ESumCase(r e0, (List.map f pairs))
+  | EBinOp(e0, op, e1) -> EBinOp(r e0, op, r e1)
+  | EUnOp(op, e0) -> EUnOp(op, r e0)
+  | ETypeAnnot(t, e0) -> ETypeAnnot(r t, e0)
 
 (* Keep track of: EXEC  LOOP EDIV  *)
 (* Units: tez time signature key *)

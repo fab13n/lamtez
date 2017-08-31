@@ -44,6 +44,7 @@ rule read = parse
 | "type" {TYPE}
 | "let" {LET}
 | "in" {IN}
+| "<-" {LEFT_ARROW}
 | "or" {OR} | "and" {AND} | "xor" {XOR}
 | "\\/" {FORALL}
 | string {STRING(trim lexbuf 1 1)}

@@ -126,6 +126,7 @@ let rec typecheck_expr ctx expr =
  
   | EProduct pairs -> typecheck_EProduct ctx pairs
   | EProductGet(e, tag) -> typecheck_EProductGet ctx e tag
+  | EProductSet(e0, tag, e1) -> typecheck_EProductUpdate ctx e0 tag e1
   | ESum(tag, e) -> typecheck_ESum ctx tag e
   | ESumCase(e, cases) -> typecheck_ESumCase ctx e cases
   | EBinOp(a, op, b) -> typecheck_EBinOp ctx a op b
@@ -175,13 +176,23 @@ and typecheck_ESumCase ctx e e_cases =
     (ctx, snd(List.hd t_pairs)) (List.tl t_pairs) in
   ctx, t
 
-and typecheck_EProductGet ctx e tag =
+and typecheck_EProductGet ctx e_product tag =
   let name = try name_of_product_tag ctx tag with Not_found -> type_error(tag^" is not a product tag") in
-  let t_prod, field_types = instantiate_composite name (product_of_name ctx name) in
-  let ctx, t_e = typecheck_expr ctx e in
-  let ctx, _ = unify ctx t_prod t_e in
+  let t_product0, field_types = instantiate_composite name (product_of_name ctx name) in
+  let ctx, t_product1 = typecheck_expr ctx e_product in
+  let ctx, _ = unify ctx t_product0 t_product1 in
   let t = List.assoc tag field_types in
   ctx, t
+
+and typecheck_EProductUpdate ctx e_product tag e_field =
+  let name = try name_of_product_tag ctx tag with Not_found -> type_error(tag^" is not a product tag") in
+  let t_product0, field_types = instantiate_composite name (product_of_name ctx name) in
+  let ctx, t_product1 = typecheck_expr ctx e_product in
+  let ctx, t_product2 = unify ctx t_product0 t_product1 in
+  let t_field0 = List.assoc tag field_types in
+  let ctx, t_field1 = typecheck_expr ctx e_field in
+  let ctx, _ = unify ctx t_field0 t_field1 in
+  ctx, t_product2
 
 and typecheck_ESum ctx tag e =
   let name = try name_of_sum_tag ctx tag with Not_found -> type_error(tag^" is not a sum tag") in

@@ -100,7 +100,18 @@ let type_ t fields =
    build 0 pp_n   
 
 let sum_type = type_ "or" and product_type = type_ "pair"
-  
+
+(* Generate a code transforming `f1 : tuple[i/n=f0] : _` into `tuple[i/n=f1] : _`. *)
+let product_set i n =
+  let path = List.nth (paths n) i in
+  let rec f (undo, redo) = function
+  | true -> "DUP; CAR; SWAP; CDR" :: undo, "SWAP; PAIR" :: redo
+  | false -> "DUP; CDR; SWAP; CAR" :: undo, "PAIR" :: redo
+  in 
+  let undo, redo = List.fold_left f ([], []) path in
+  Printf.sprintf "DIP { %s }; # open up product\n SWAP; DROP; # replace field %d/%d\n %s; # rebuild product\n"
+    (String.concat "; " (List.rev undo)) i n (String.concat "; " (List.rev redo))
+
 let show n =
   for i=1 to n do
     print_endline(string_of_int i^":"^pp2s (paths i))
