@@ -132,7 +132,7 @@ let pop_evar (name, prev_t) ctx =
 
 let instantiate_scheme (params, t) =
   let x = List.fold_left (fun t p -> replace_tvar p (fresh_tvar()) t) t params in
-  print_endline ("Instanciate "^TreePrint.string_of_scheme (params, t)^" ::= "^TreePrint.string_of_type x);
+  (* print_endline ("Instanciate "^TreePrint.string_of_scheme (params, t)^" ::= "^TreePrint.string_of_type x); *)
   x
 
 let instantiate_composite name (params, d_pairs) =
@@ -195,7 +195,7 @@ let rec unify ctx t0 t1 =
     when name0=name1 && List.length args0 = List.length args1 ->
     let ctx, args_u = list_fold_map2 unify ctx args0 args1 in
     ctx, TApp(name0, args_u)
-  | TTuple(a), TTuple(b) ->
+  | TTuple(a), TTuple(b) when List.length a = List.length b ->
     let ctx, c = list_fold_map2 unify ctx a b in
     ctx, TTuple(c)
   | _ -> type_error ("Not unifiable: "^TreePrint.string_of_type t0^" and "^TreePrint.string_of_type t1)
