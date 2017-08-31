@@ -62,9 +62,9 @@ let rec string_of_iExpr =
   | IELetIn(v, e0, e1) -> "let "^v^" = "^et e0^" in "^et e1
   | IEApp(f, args) -> "("^sep_list " " et (f::args)^")"
   | IEProduct x  -> "("^sep_list ", " et x^")"
-  | IESum (i, n, x) -> sprintf "{%d/%d} %s" i n (et x)
-  | IEProductGet(x, i, n) -> sprintf "%s.{%d/%d}" (et x) i n
-  | IEProductSet(x, i, n, y) -> sprintf "%s.{%d/%d} <- %s" (et x) i n (et y)
+  | IESum (i, n, x) -> sprintf "<%d|%d> %s" i n (et x)
+  | IEProductGet(x, i, n) -> sprintf "%s.<%d|%d>" (et x) i n
+  | IEProductSet(x, i, n, y) -> sprintf "%s.<%d|%d> <- %s" (et x) i n (et y)
   | IESumCase(e, cases) -> 
     let f (var, it, e_case) = "["^var^":"^t it^"] -> "^et e_case in
     "("^et e^" ? "^sep_list " | " f cases^")"
@@ -80,11 +80,11 @@ let rec string_of_untyped_iExpr e =
   | IELetIn(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
   | IEApp(f, args) -> "("^sep_list " " r (f::args)^")"
   | IEProduct x  -> "("^sep_list ", " r x^")"
-  | IESum (i, n, x) -> sprintf "%d(%s)" i (r x)
-  | IEProductGet(x, i, n) -> sprintf "%s.%d" (r x) i
-  | IEProductSet(x, i, n, y) -> sprintf "%s.%d <- %s" (r x) i (r y)
+  | IESum (i, n, x) -> sprintf "<%d>%s" i (r x)
+  | IEProductGet(x, i, n) -> sprintf "%s.<%d>" (r x) i
+  | IEProductSet(x, i, n, y) -> sprintf "%s.<%d> <- %s" (r x) i (r y)
   | IESumCase(e, cases) ->
-    let f i (v, _, e_case) = sprintf "%d(%s): %s" i v (r e_case) in
+    let f i (v, _, e_case) = sprintf "<%d>(%s): %s" i v (r e_case) in
     let cases = List.mapi f cases in
     "("^r e^" ? "^String.concat " | " cases^")"
   
