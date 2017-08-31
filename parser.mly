@@ -15,7 +15,7 @@ open Tree
 %token <int> TUPLE_GET
 %token <string> PRODUCT_GET
 %token LBRACE RBRACE
-%token CASE BAR
+%token CASE BAR STORE
 %token EQ NEQ LE LT GE GT CONCAT
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
 %token TYPE LET IN
@@ -32,7 +32,7 @@ open Tree
 %left STAR DIV
 %%
 
-main: d=type_decl* e=expr EOF {d, e}
+main: d=type_decl* s=store_decl* e=expr EOF {d, s, e}
 
 
 typeT:
@@ -47,8 +47,10 @@ schemeT:
 | FORALL vars=ID* COLON t=typeT {vars, t}
 | t=typeT {[], t}
 
-type_decl:
-| TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
+type_decl: TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
+
+store_decl:
+| STORE name=tag_or_id COLON? t=typeT {(name, t)}
 
 composite_decl_rhs:
 | t=typeT {fun name params -> if name="primitive" && params=[] then DPrim(name, params) else DAlias(name, params, t)}
@@ -64,7 +66,7 @@ expr0:
 | n=TIMESTAMP {ETime n}
 | s=SIGNATURE {ESig s}
 | s=STRING {EString s} (* TODO Unescape *)
-(* TODO support keys *)
+(* TODO support crypto keys *)
 | s=ID {EId s}
 | LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(pe, pt, acc)) p e}
 | LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId "unit" | [e] -> e | p -> ETuple(p)}
@@ -73,6 +75,8 @@ expr0:
 | e=expr0 tag=PRODUCT_GET {EProductGet(e, tag)}
 | e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(e, n)}
+| STORE s=tag_or_id  {EProductGet(EId("@"), s)}
+| STORE s=tag_or_id LEFT_ARROW e=expr {EProductSet(EId("@"), s, e)}
 
 expr:
 | f=expr0 args=arg* {List.fold_left (fun acc arg -> EApp(acc, arg)) f args}
@@ -100,6 +104,8 @@ arg:
 | e=expr0 {e}
 | tag=TAG {ESum(tag, EId "unit")}
 | LPAREN e=expr RPAREN {e}
+
+tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}
 
 sum_case: 
 | tag=TAG COLON expr=expr {(tag, (fresh_var(), expr))}

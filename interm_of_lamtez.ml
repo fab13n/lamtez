@@ -131,7 +131,7 @@ let get_product_tags ctx (t:typeT) =
   let name = match t with TApp(name, _)  -> name | _ -> unsound "bad product type" in
   let tags = match TypingContext.decl_of_name ctx name with
     | DProduct(_, type_params, fields) -> List.map fst fields 
-    | d -> unsound ("Not a product type: "^TreePrint.string_of_type t^" = "^TreePrint.string_of_decl d) in
+    | d -> unsound ("Not a product type: "^TreePrint.string_of_type t^" = "^TreePrint.string_of_type_decl d) in
   tags
 
 let get_sum_decl_cases ctx (t:typeT) =
@@ -140,14 +140,14 @@ let get_sum_decl_cases ctx (t:typeT) =
     begin match TypingContext.decl_of_name ctx name with
     | DSum(_, type_params, cases) ->
       List.map (fun (tag, t) -> tag, replace_tvars type_params type_args t) cases
-    | d -> unsound ("Not a sum type: "^TreePrint.string_of_type t^" = "^TreePrint.string_of_decl d) 
+    | d -> unsound ("Not a sum type: "^TreePrint.string_of_type t^" = "^TreePrint.string_of_type_decl d) 
     end
   | t -> unsound ("Not a sum type: "^TreePrint.string_of_type t) 
 
 let rec compile_exprT ctx e =
   let c = compile_exprT ctx in
   let e_type = Typing.retrieve_type ctx e in
-  print_endline("exprT->iExpr: "^TreePrint.string_of_expr e^"; typeT: "^TreePrint.string_of_type e_type); 
+  (* print_endline("exprT->iExpr: "^TreePrint.string_of_expr e^"; typeT: "^TreePrint.string_of_type e_type);  *)
   let it = compile_typeT ctx e_type in
 
   match e with

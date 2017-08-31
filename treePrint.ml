@@ -17,7 +17,7 @@ let rec string_of_type t =
 
 let string_of_decl_pair (tag, t) = tag^": "^string_of_type t
 
-let string_of_decl d = 
+let string_of_type_decl d = 
   let left =
     match d with DSum(n, p, _) | DProduct(n, p, _) | DAlias(n, p, _) | DPrim(n, p) -> 
     "type "^sep_list " " (fun x->x) (n::p)
@@ -30,6 +30,9 @@ let string_of_decl d =
     | DPrim(_, _) -> "primitive"
   in
   left^" = "^right
+
+let string_of_store_decl (tag, t) =
+  "@"^(String.uncapitalize_ascii tag)^": "^string_of_type t
 
 let string_of_scheme (vars, t) =
   if vars=[] then string_of_type t
@@ -70,7 +73,8 @@ let rec string_of_expr e =
   | EUnOp(op, e0) -> string_of_unop op^soe e0
   | ETypeAnnot(e0, t) -> "("^soe e0^": "^string_of_type t^")"
 
-let string_of_program (d, e) =
-  sep_list "\n" string_of_decl d ^ "\n" ^
+let string_of_program (d, s, e) =
+  sep_list "\n" string_of_type_decl d ^ "\n" ^
+  sep_list "\n" string_of_store_decl s ^ "\n" ^
   string_of_expr e
 

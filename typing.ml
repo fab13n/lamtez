@@ -357,14 +357,21 @@ let typecheck_decl ctx = function
   | DProduct(var, params, cases) -> add_product var params cases ctx
   | DSum(var, params, cases) -> add_sum var params cases ctx
 
-let typecheck_contract ctx (dd, e) =
+let typecheck_store (ctx, fields) (tag, t) =
+  if List.mem_assoc tag fields then unsound("Storage field "^tag^" redefined");
+  (ctx, (tag, t)::fields)
+
+let typecheck_contract ctx (dd, ss, e) =
+  (* TODO is the arity of TApp() type properly checked? *)
   let ctx = List.fold_left typecheck_decl ctx dd in
+  let ctx, store_fields = List.fold_left typecheck_store (ctx, []) ss in
+  let ctx = add_product "@" [] store_fields ctx in
+  let ctx = add_evar "@" ([], TApp("@", [])) ctx in
   let ctx, t = typecheck_expr ctx e in
   let param = fresh_tvar ~prefix:"param" () in
-  let storage = fresh_tvar ~prefix:"storage" () in
   let result = fresh_tvar ~prefix:"result" () in
-  let t' = tlambda [param; storage; TTuple[result; storage]] in
-  unify ctx t t'
+  let ctx, t =  unify ctx t (tlambda [param; result]) in 
+  ctx, expand_type ctx (TId "@"), t
 
 (*
 

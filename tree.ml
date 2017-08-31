@@ -52,7 +52,7 @@ type exprT =
 
   | ETypeAnnot of exprT * typeT
 
-type programT = declT list * exprT
+type programT = declT list * (tag * typeT) list * exprT
 
 let tprim0 id = TApp(id, [])
 let rec tlambda = function [] -> raise Not_found | [t] -> t | t :: ts' -> TLambda(t, tlambda ts')

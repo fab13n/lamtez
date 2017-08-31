@@ -114,9 +114,11 @@ let tuple n =
 
 (* Retrieve the i-th element in an n elements product *)
 let product_get i n =
-  let p = List.nth (paths n) i in
-  let x = List.fold_left (fun acc b -> acc^if b then "D" else "A") "" p in
-  "C"^x^"R"
+  if n=1 then "" else begin
+    let p = List.nth (paths n) i in
+    let x = List.fold_left (fun acc b -> acc^if b then "D" else "A") "" p in
+    "C"^x^"R"
+  end
 
 
 (* Generate a code transforming `f1 : tuple[i/n=f0] : _` into `tuple[i/n=f1] : _`. *)

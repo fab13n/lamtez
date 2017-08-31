@@ -46,6 +46,7 @@ rule read = parse
 | "in" {IN}
 | "<-" {LEFT_ARROW}
 | "\\/" {FORALL}
+| '@' {STORE}
 | string {STRING(trim lexbuf 1 1)}
 | ('+'|'-') num {INT(int_of_string (Lexing.lexeme lexbuf))}
 | num {NAT(int_of_string (Lexing.lexeme lexbuf))}

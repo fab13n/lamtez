@@ -225,16 +225,13 @@ and compile_IESumCase stk test cases it =
 
 
 
-let compile_contract = function
-  | IELambda(
-    [(param, t_param); (storage, t_storage)], 
-    (e_body, (ITProduct(None, lazy [t_result; t_storage'])) as body)), _
-    when t_storage=t_storage' ->
-    let stk, code = compile_iTypedExpr [(Some storage, t_storage); (Some param, t_param)] body in
-    let code = sprintf "DUP; CAR; SWAP; CDR # %s/%s split\n%sDIP { %s } # remove %s and %s\n"
-      param storage code (sep_list "; " (fun _ -> "DROP") (List.tl stk)) param storage in
+let compile_contract it_store = function
+  | IELambda([(param, it_param)], (e_body, t_body as body)), t_lambda ->
+    let stk, code = compile_iTypedExpr [(Some param, it_param); (Some "@", it_store)] body in
+    let code = sprintf "DUP; CDR; SWAP; CAR # store/%s split\n%sDIP { %s } # remove %s\nPAIR; # group result and store\n"
+      param code (sep_list "; " (fun _ -> "DROP") (List.tl (List.tl (stk)))) param in
     let code = sprintf "parameter %s;\nstorage %s;\nreturn %s;\ncode { %s}\n"
-                (compile_iType t_param) (compile_iType t_storage) (compile_iType t_result) code in
+                (compile_iType it_param) (compile_iType it_store) (compile_iType t_body) code in
     let code = Code_format.indent '{' '}' code in
     code
   | _ -> unsound "Bad contract type"
