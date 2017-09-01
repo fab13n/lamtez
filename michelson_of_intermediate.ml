@@ -65,7 +65,7 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     let stk', c0 = compile_typed_expr stk e0 in
     let stk', c1 = compile_typed_expr stk e1 in (* TODO sure that the stask can't be messsed up? *)
     (None, it)::stk, c0^c1^Compile_composite.product_set i n
-  | I.EStoreSet(i, e0, e1) -> not_impl "store set"
+  | I.EStoreSet(i, e0, e1) -> compile_EStoreSet stk i e0 e1
   | I.ESumCase(test, cases) -> compile_ESumCase stk test cases it
   in
   if _DEBUG_ then begin
@@ -180,17 +180,13 @@ and compile_contract_call stk contract amount contract_arg t_result =
       let stk', c1 = compile_typed_expr stk' amount in
       let stk', c2 = compile_typed_expr stk' contract_arg in
 
-      let store_stack = sprintf "2TUPLE %d; 2SUM %d/%d; PRODUCT_SET %d/%d" (List.length stk - 1) (-1) (-1) (-1) (-1) in
-      let restore_stack= sprintf "GET_PRODUCT %d/%d; GET_SUM %d/%d; EXPAND_PRODUCT %d" (-1) (-1) (-1) (-1) (List.length stk - 1) in
+      let store_stack   = sprintf "2TUPLE %d; 2SUM %d/%d; PRODUCT_SET %d/%d" (List.length stk - 1) (-1) (-1) (-1) (-1) in
+      let restore_stack = sprintf "GET_PRODUCT %d/%d; GET_SUM %d/%d; EXPAND_PRODUCT %d" (-1) (-1) (-1) (-1) (List.length stk - 1) in
       (None, t_result)::stk,
       c0^c1^c2^
       "DIIIP { "^store_stack^"} # Save the stack into storage\n"^
       "TRANSFER_TOKENS;\n"^
       "DIP { "^restore_stack^"}"
-
-and compile_EProductSet stk e0 i n e1 = not_impl("product set")
-
-and compile_EStoreSet stk e0 i n e1 e2 = not_impl("store set")
 
 and compile_ESum stk i n content it =
   match it with
@@ -211,6 +207,38 @@ and compile_ESum stk i n content it =
     end
   | _ -> unsound "Not a sum type"
 
+and compile_EProductSet stk e_product i n e_field it =
+  let n = match it with I.TProduct(_, lazy fields) -> List.length fields | _ -> assert false in
+
+  let stk, c0 = compile_typed_expr stk e_product in
+  let stk, c1 = compile_typed_expr stk e_field in
+
+  (* Perform field update *)
+  let c2 = sprintf "%s # update field %d/%d\n" (Compile_composite.product_set i n) i n in
+
+  (* field removed from stack *)
+  let stk = List.tl stk in
+
+  stk, c0^c1^c2
+
+
+and compile_EStoreSet stk i e_field e_rest =
+  let stk, c0 = compile_typed_expr stk e_field in
+  (* Current depth of user store *)
+  let store_level = match get_level stk "@" with Some n -> n-1 | None -> assert false in
+  (* Number of fields in user store *)
+  let n = let _, t_store = List.nth stk store_level in
+          match t_store with I.TProduct(_, lazy fields) -> List.length fields | _ -> assert false in
+  (* Perform field update *)
+  let c1 = sprintf "%s # PEEK %d user store\n" (peek store_level) store_level^
+           sprintf "SWAP\n"^
+           sprintf "%s # update field %d/%d\n" (Compile_composite.product_set i n) i n^
+           sprintf "%s # POKE %d user store back\n" (poke (store_level-1)) (store_level-1) in
+  (* field removed from stack *)
+  let stk = List.tl stk in
+
+  let stk, c2 = compile_typed_expr stk e_rest in
+  stk, c0^c1^c2
 
 and compile_ESumCase stk test cases it =
   let stk, code = compile_typed_expr stk test in
@@ -256,7 +284,7 @@ let compile_contract t_user_store expr =
       sprintf "parameter %s;\n" (compile_etype t_param) ^
       sprintf "storage %s;\n" (compile_etype t_stores) ^
       sprintf "return %s;\n" (compile_etype t_body) ^
-      sprintf "code { DUP; CDR; SWAP; CAR; # spilt %s/stores\n" v_param ^
+      sprintf "code { DUP; CDR; SWAP; CAR; # split %s/stores\n" v_param ^
       sprintf "DIP { DUP; CDR; SWAP; CAR }; # split user/compiler stores\n"^
       sprintf "%s" code ^
       sprintf "DIP { DROP }; # remove %s\n" v_param ^

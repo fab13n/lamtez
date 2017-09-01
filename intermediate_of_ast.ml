@@ -126,9 +126,18 @@ let rec compile_expr ctx e =
     let tag2num = List.mapi (fun i t -> t, i) tags in
     I.EProductGet(c e_product, List.assoc tag tag2num, List.length tags), it
 
-  | A.EProductSet(e_product, tag, e_field) -> not_impl "product update"
+  | A.EProductSet(e_product, tag, e_field) ->
+    let t_product = Ctx.retrieve_type ctx e_product in
+    let tags = get_product_tags ctx t_product in
+    let tag2num = List.mapi (fun i t -> t, i) tags in
+    let i = List.assoc tag tag2num and n = List.length tag2num in
+    I.EProductSet(c e_product, i, n, c e_field), it
 
-  | A.EStoreSet(v, e0, e1) -> not_impl "store set"
+  | A.EStoreSet(tag, e_field, e_rest) ->
+    let t_store = A.TApp("@", []) in
+    let tags = get_product_tags ctx t_store in
+    let tag2num = List.mapi (fun i t -> t, i) tags in
+    I.EStoreSet(List.assoc tag tag2num, c e_field, c e_rest), it
 
   | A.ESum(tag, e) ->
     let tags = get_sum_decl_cases ctx e_type in

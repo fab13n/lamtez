@@ -1,0 +1,10 @@
+@v0 :: int
+@v1 :: nat
+@v2 :: bool
+@v3 :: string
+
+\(param :: bool):
+
+let dummy = 123;
+@v2 <- True;
+param or @v2

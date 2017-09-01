@@ -125,8 +125,8 @@ let product_get i n =
 let product_set i n =
   let path = List.nth (paths n) i in
   let rec f (undo, redo) = function
-  | true -> "DUP; CAR; SWAP; CDR" :: undo, "SWAP; PAIR" :: redo
-  | false -> "DUP; CDR; SWAP; CAR" :: undo, "PAIR" :: redo
+  | true -> "DUP; CAR; SWAP; CDR" :: undo, "PAIR" :: redo
+  | false -> "DUP; CDR; SWAP; CAR" :: undo, "SWAP; PAIR" :: redo
   in 
   let undo, redo = List.fold_left f ([], []) path in
   Printf.sprintf "DIP { %s }; # open up product\n SWAP; DROP; # replace field %d/%d\n %s; # rebuild product\n"
