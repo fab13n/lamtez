@@ -6,7 +6,7 @@ type operation = Deposit key + Withdrawal withdrawal
 \(operation::operation):
 ( operation ?
 | Deposit key:
-  let new_balance = ( map-get key storage ?
+  let new_balance = ( map-get key @accounts ?
                     | None: self-amount  # Create new account
                     | Some balance: self-amount + balance  # update existing account
                     );
@@ -22,9 +22,9 @@ type operation = Deposit key + Withdrawal withdrawal
             | False: fail  # withdrawal denied (insufficient funds)
             | True: let new_balance = ( balance = w.Amount ?
 			                          | True: None  # Delete empty account
-									  | False: Some (balance - w.Amount  # update account
+									  | False: Some (balance - w.Amount)  # update account
 									  );
-					@accounts <- map_update w.Key new_balance @accounts;
+					@accounts <- map-update w.Key new_balance @accounts;
 					()
             )
           )

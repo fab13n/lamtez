@@ -1,12 +1,12 @@
-@royal_key :: key
+@royal_key         :: key
 @enthronement_date :: time
 @enthronement_cost :: tez
 
-\(parameter: key):
+\(parameter :: key):
 ( @enthronement_date + 604800 > now or self-amount > @enthronement_cost ?
 | True: @royal_key <- parameter;
         @enthronement_date <- now;
-        @enthronement_code <- self-amount;
+        @enthronement_cost <- self-amount;
         ()
 | False: fail
 )

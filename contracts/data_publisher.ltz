@@ -1,22 +1,20 @@
 type data = string
-type data_update = Sig: sig * Data: data
-type operation = option (sig * string)
+type operation = option (sig * data)
 
 @key  :: key
 @data :: data
 @fee  :: tez
 
-\(parameter :: operation) :: data:
+\(parameter :: operation):
 ( parameter ?
 | None: ( self-amount >= @fee ?
         | False: fail
         | True:  @data
         )
 | Some signed_data:
-  ( crypto-check @key signed_data.Sig signed_data.Data ?
+  let sig = signed_data.0; let data = signed_data.1;
+  ( crypto-check @key sig data ?
   | False: fail
-  | True:
-    @data <- signed_string.Data;
-    signed_string.Data
+  | True: @data <- data; data
   )
 )

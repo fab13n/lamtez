@@ -1,8 +1,10 @@
 @release_date :: time
-@amount :: tez
-@destination :: contract unit unit
+@amount       :: tez
+@destination  :: contract unit unit
 
-\(parameter::unit): ( now >= @release_date ?
-                    | False: fail
-                    | True: contract-call () @amount @destination
-                    )
+\(parameter :: unit):
+
+( now >= @release_date ?
+| False: fail
+| True: contract-call @destination () @amount
+)

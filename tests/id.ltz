@@ -1,1 +1,1 @@
-\(param: unit) : ()
+\(param :: unit) : ()

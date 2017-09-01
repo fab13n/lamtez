@@ -1,7 +1,7 @@
 type data = string
 
-@i :: nat
-@j :: nat
+@i   :: nat
+@j   :: nat
 @map :: map nat data
 
 \(parameter :: option data):

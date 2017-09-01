@@ -4,36 +4,36 @@ type sum3 = Int_0_3 int + String_1_3 string + Tez_2_3 tez
 type sum4 = Int_0_4 int + String_1_4 string + Tez_2_4 tez + Nat_3_4 nat
 type sum5 = Int_0_5 int + String_1_5 string + Tez_2_5 tez + Nat_3_5 nat + Bool_4_5 bool
 
-@string: string
-@tez: tez
-@nat: nat
-@bool: bool
+@string :: string
+@tez    :: tez
+@nat    :: nat
+@bool   :: bool
 
-\(param: unit):
+\(param :: unit):
   let x1 = ( Int_0_1 +1 ?
            | Int_0_1 x: Int_0_1 (x - @nat)
-           ) in
+           );
   let x2 = ( Int_0_2 1 ?
            | Int_0_2 x: Int_0_2 (x - @nat)
            | String_1_2 x: String_1_2 (x^@string)
-           ) in
+           );
   let x3 = ( Int_0_3 1 ?
            | Int_0_3 x: Int_0_3 (x - 1)
            | String_1_3 x: String_1_3 (x^"!")
            | Tez_2_3 x: Tez_2_3 (x + tz1.50)
-           ) in
+           );
   let x4 = ( Int_0_4 1 ?
            | Int_0_4 x: Int_0_4 (x - 1)
            | String_1_4 x: String_1_4 (x^"!")
            | Tez_2_4 x: Tez_2_4 (x + @tez)
            | Nat_3_4 x: Nat_3_4 (x + 1)
-           ) in
+           );
   let x5 = ( Int_0_5 1 ?
            | Int_0_5 x: Int_0_5 (x - 1)
            | String_1_5 x: String_1_5 (x^"!")
            | Tez_2_5 x: Tez_2_5 (x + tz1.50)
            | Nat_3_5 x: Nat_3_5 (x + 1)
            | Bool_4_5 x: Bool_4_5 (x or False and @bool)
-           ) in
+           );
 
   (x1, x2, x3, x4, x5)

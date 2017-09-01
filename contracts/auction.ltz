@@ -1,4 +1,63 @@
-# 
+# Auction contract: there is always a current bid value,
+# and a current bid holder. Those can change if:
+#  * the auction isn't closed yet;
+#  * and someone bid more than the current holder, by at
+#    least `increment` tez.
+#
+# When a new holder outbids an old holder, the later is
+# reimbursed of his money, minus a configurable bidding
+# fee (which can be set to tz0.00).
+#
+# The auction closes after the end date has been reached;
+# However, everytime a new bid is accepted, the end date
+# is postponed if necessary, so that the auction remains
+# open for at least `raising_delay` seconds.
+#
+# Optionally, a `hard_end_date` can be fixed: in this
+# case, the auction won't stay open after this date
+# no matter what.
+#
+# Once the auction won, the winning bidder can prove their
+# identity by signing a message with the key provided in
+# their winning bid.
 
-@end_date :: option time
-@raising_delay : option nat
+type bid = Key: key * Refund: contract unit unit
+
+@current_bid      :: option bid  # Key and refund address of current winner.
+@current_price    :: tez         # How much the current winner paid.
+@current_end_date :: time        # When to stop unless new winning bids are submitted.
+@raising_delay    :: nat         # Stay open for at least so many seconds after a winning bid.
+@hard_end_date    :: option time # The auction stops at this date no matter what.
+@increment        :: tez         # New bid must raise previous ones by at least taht much.
+@bidding_fee      :: tez         # Each new bid pays this fee, whether they end up winning or not.
+
+\(bid::bid):
+
+# Check dates: is the auction still running?
+let _ =
+(now > @current_end_date ? True: fail | False: ());
+let _ =
+( @hard_end_date ?
+| Some date: (now > date ? True: fail | False: ())
+| None: ()
+);
+
+# Check whether the bid was sufficiently founded
+let _ =
+( self-amount > @current_price + @increment ? False: fail | True: ());
+
+# Recompute @current_end_date
+let new_date = now + @raising_delay;
+@current_end_date <- (new_date > @current_end_date ? True: new_date | False: @current_end_date);
+
+# Reimburse previous holder
+let _ =
+( @current_bid ?
+| None: ()
+| Some old_bid: contract-call old_bid.Refund () @current_price
+);
+
+# Update winning bidder info
+@current_bid   <- Some bid;
+@current_price <- self-amount - @bidding_fee;
+()
