@@ -5,6 +5,7 @@ module P = String_of_ast
 let _DEBUG_ = true
 
 module StringMap = Map.Make(String)
+module ExprMap = Map.Make(struct type t = A.expr let compare=compare end)
 
 type composite = {type_params: A.tvar list; cases: (A.tag*A.etype) list}
 type substitutions = (A.tvar * A.etype) list
@@ -17,6 +18,7 @@ type t = {
   aliases: A.scheme StringMap.t;
   primitives: A.tvar list StringMap.t;
   evars: A.scheme StringMap.t;
+  types_assoc: A.etype ExprMap.t;
 }
 
 let empty = {
@@ -27,6 +29,7 @@ let empty = {
   aliases = StringMap.empty;
   evars = StringMap.empty;
   primitives = StringMap.empty;
+  types_assoc = ExprMap.empty;
 }
 
 let string_of_t ctx =
@@ -159,6 +162,11 @@ and expand_scheme ctx (v, t) =
 and scheme_of_evar ctx name =
   try StringMap.find name ctx.evars
   with Not_found -> type_error("Unbound variable "^name)
+
+let save_type e t ctx =
+  {ctx with types_assoc = ExprMap.add e t ctx.types_assoc}
+
+let retrieve_type ctx e = ExprMap.find e ctx.types_assoc
 
 (* Combo of a fold_left2 with a map2: the function f returns both
  * an accumulator and a transformed list element.

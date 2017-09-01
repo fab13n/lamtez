@@ -5,26 +5,6 @@ module P = String_of_ast
 
 module StringSet = Set.Make(String)
 
-(* TODO: use Ephemerons to prevent memory leaks. *)
-module E2T: sig
-  val get: A.expr -> A.etype
-  val set: A.expr -> A.etype -> unit
-end = struct
-  module HashedExpr = struct
-    type t = A.expr
-    let equal = (==)
-    let hash = Hashtbl.hash
-  end
-  module ExprHashtbl = Hashtbl.Make(HashedExpr)
-  let tbl: A.etype ExprHashtbl.t = ExprHashtbl.create (37)
-  let get (e:A.expr) = ExprHashtbl.find tbl e
-  let set (e:A.expr) t = ExprHashtbl.add tbl e t
-end
-
-let retrieve_type ctx e =
-  let t = E2T.get e in
-  Ctx.expand_type ctx t
-
 let _DEBUG_ = true
 let debug_indent = ref 0
 
@@ -50,7 +30,7 @@ let rec typecheck_expr ctx expr =
   | A.ELetIn(id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
   | A.EApp(f, arg) -> typecheck_EApp ctx f arg
   | A.ETypeAnnot(e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
-  | A.ETuple exprs -> let ctx, types = list_fold_map typecheck_expr ctx exprs in ctx, TTuple(types)
+  | A.ETuple exprs -> let ctx, types = list_fold_map typecheck_expr ctx exprs in ctx, A.TTuple(types)
   | A.ETupleGet(e, n) -> typecheck_ETupleGet ctx e n
   | A.EProduct pairs -> typecheck_EProduct ctx pairs
   | A.EProductGet(e, tag) -> typecheck_EProductGet ctx e tag
@@ -66,7 +46,7 @@ let rec typecheck_expr ctx expr =
     raise Exit
   in
   let t = Ctx.expand_type ctx t in
-  E2T.set expr t;
+  let ctx = Ctx.save_type expr t ctx in
   if _DEBUG_ then begin
     decr debug_indent;
     print_endline (String.make (2 * !debug_indent) ' '^"Result: val "^P.string_of_expr expr^": "^P.string_of_type t);

@@ -75,7 +75,7 @@ let get_sum_decl_cases ctx (t:A.etype) =
 
 let rec compile_expr ctx e =
   let c = compile_expr ctx in
-  let e_type = Typecheck.retrieve_type ctx e in
+  let e_type = Ctx.retrieve_type ctx e in
   (* print_endline("exprT->iExpr: "^P.string_of_expr e^"; typeT: "^P.string_of_type e_type);  *)
   let it = compile_etype ctx e_type in
 
@@ -111,7 +111,7 @@ let rec compile_expr ctx e =
   | A.ETuple(list) -> I.EProduct(List.map c list), it
 
   | A.ETupleGet(e_tuple, i) ->
-    let t_tuple = Typecheck.retrieve_type ctx e_tuple in
+    let t_tuple = Ctx.retrieve_type ctx e_tuple in
     begin match t_tuple with
     | A.TTuple(list) -> I.EProductGet(c e_tuple, i, List.length list), it
     | t -> unsound("Not a tuple type "^P.string_of_type t)
@@ -121,7 +121,7 @@ let rec compile_expr ctx e =
     I.EProduct (List.map (fun tag -> c (List.assoc tag fields)) tags), it
 
   | A.EProductGet(e_product, tag) ->
-    let t_product = Typecheck.retrieve_type ctx e_product in
+    let t_product = Ctx.retrieve_type ctx e_product in
     let tags = get_product_tags ctx t_product in
     let tag2num = List.mapi (fun i t -> t, i) tags in
     I.EProductGet(c e_product, List.assoc tag tag2num, List.length tags), it
@@ -137,7 +137,7 @@ let rec compile_expr ctx e =
 
   | A.ESumCase(e_test, e_cases) ->
     (* TODO d_cases are generic. *)
-    let t_test = Typecheck.retrieve_type ctx e_test in
+    let t_test = Ctx.retrieve_type ctx e_test in
     let d_cases = get_sum_decl_cases ctx t_test in
     let rec f e_cases (d_tag, d_type) =
       let e_var, e_expr = List.assoc d_tag e_cases in
