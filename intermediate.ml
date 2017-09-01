@@ -10,12 +10,13 @@
  *)
 
 type tvar = string
+type tname = string
 
 type etype =
-| TPrim of tvar * etype list
+| TPrim of tname * etype list
 | TLambda of etype list * etype
-| TProduct of (tvar * etype list) option * etype list Lazy.t
-| TSum of (tvar * etype list) option * etype list Lazy.t (* TODO name and args shouldn't be optional. *)
+| TProduct of (tname * etype list) option * etype list Lazy.t
+| TSum of (tname * etype list) option * etype list Lazy.t (* TODO name and args shouldn't be optional. *)
 
 type evar = string
 

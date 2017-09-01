@@ -46,63 +46,12 @@ let rec typecheck_expr ctx expr =
   | A.EId(id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
     ctx, Ctx.instantiate_scheme (scheme)
-
-  | A.ELambda(id, (t_params, t_arg), e) ->
-    (if t_params <> [] then unsupported "parametric parameter types");
-    (* TODO fail if id is bound by default ctx? *)
-    (* Type e supposing that id has type t_arg. *)
-    let ctx, prev = Ctx.push_evar id (t_params, t_arg) ctx in
-    let ctx, te = typecheck_expr ctx e in
-    (* TODO let-generalization? *)
-    let ctx = Ctx.pop_evar prev ctx in
-    ctx , A.TLambda(t_arg, te)
-
-  | A.ELetIn(id, t_id, e0, e1) ->
-    (* TODO fail if id is bound by default ctx? *)
-    let ctx, t0 = typecheck_expr ctx e0 in
-    let ctx, t0 = Ctx.unify ctx t_id t0 in
-    (* TODO: generalize t0? *)
-    let ctx, prev = Ctx.push_evar id ([], t0) ctx in
-    let ctx, t1 = typecheck_expr ctx e1 in
-    let ctx = Ctx.pop_evar prev ctx in
-    ctx, t1
-
-  | A.EApp(f, arg) ->
-    let ctx, t_f = typecheck_expr ctx f in
-    let ctx, t_arg = typecheck_expr ctx arg in
-    let ctx, t_param, t_result = match t_f with
-      | A.TLambda(t_param, t_result) -> ctx, t_param, t_result
-      | A.TId("contract-call") ->
-        (* TODO contract-call is a variable name, not a type name, this test is wrong! *)
-        (* TODO check that other variables aren't used after this. *)
-        (* TODO check that storage argument type == contract storage type *)
-        (* TODO check that we aren't in a lambda. *)
-        not_impl "contract-call typing"
-      | A.TId(id) ->
-         let t_param, t_result = A.fresh_tvar(), A.fresh_tvar() in
-         let ctx, _ = Ctx.unify ctx t_f (A.TLambda(t_param, t_result)) in
-         ctx, t_param, t_result
-      | _ -> type_error "Applying a non-function" in
-    let ctx, _ = Ctx.unify ctx t_param t_arg in
-    ctx, t_result
-
-  | A.ETypeAnnot(e, t) ->
-    let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
-
-  | A.ETuple exprs ->
-    (* Every element must typecheck_expr, the total type is their product. *)
-    let ctx, types = list_fold_map typecheck_expr ctx exprs in
-    ctx, A.TTuple(types)
-
-  | A.ETupleGet(e, n) ->
-    (* Can't use simply unification: we wouldn't know how many elements are in the tuple. *)
-    let ctx, t_e = typecheck_expr ctx e in
-    begin match t_e with
-    | A.TTuple types ->
-      (try ctx, List.nth types n with Failure _ -> type_error "Out of tuple index")
-    | _ -> type_error "Not known to be a tuple"
-    end
-
+  | A.ELambda(id, scheme, e) -> typecheck_ELambda ctx id scheme e
+  | A.ELetIn(id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
+  | A.EApp(f, arg) -> typecheck_EApp ctx f arg
+  | A.ETypeAnnot(e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
+  | A.ETuple exprs -> let ctx, types = list_fold_map typecheck_expr ctx exprs in ctx, TTuple(types)
+  | A.ETupleGet(e, n) -> typecheck_ETupleGet ctx e n
   | A.EProduct pairs -> typecheck_EProduct ctx pairs
   | A.EProductGet(e, tag) -> typecheck_EProductGet ctx e tag
   | A.EProductSet(e0, tag, e1) -> typecheck_EProductSet ctx e0 tag e1
@@ -123,6 +72,54 @@ let rec typecheck_expr ctx expr =
     print_endline (String.make (2 * !debug_indent) ' '^"Result: val "^P.string_of_expr expr^": "^P.string_of_type t);
   end;
   ctx, t
+
+and typecheck_ELambda ctx id scheme e =
+  if fst scheme <> [] then unsupported "parametric parameter types";
+  (* TODO fail if id is bound by default ctx? *)
+  (* Type e supposing that id has type t_arg. *)
+  let ctx, prev = Ctx.push_evar id scheme ctx in
+  let ctx, te = typecheck_expr ctx e in
+  (* TODO let-generalization? *)
+  let ctx = Ctx.pop_evar prev ctx in
+  ctx , A.TLambda(snd scheme, te)
+
+and typecheck_ELetIn ctx id t_id e0 e1 =
+  (* TODO fail if id is bound by default ctx? *)
+  let ctx, t0 = typecheck_expr ctx e0 in
+  let ctx, t0 = Ctx.unify ctx t_id t0 in
+  (* TODO: generalize t0? *)
+  let ctx, prev = Ctx.push_evar id ([], t0) ctx in
+  let ctx, t1 = typecheck_expr ctx e1 in
+  let ctx = Ctx.pop_evar prev ctx in
+  ctx, t1
+
+and typecheck_EApp ctx f arg =
+  let ctx, t_f = typecheck_expr ctx f in
+  let ctx, t_arg = typecheck_expr ctx arg in
+  let ctx, t_param, t_result = match t_f with
+    | A.TLambda(t_param, t_result) -> ctx, t_param, t_result
+    | A.TId("contract-call") ->
+      (* TODO contract-call is a variable name, not a type name, this test is wrong! *)
+      (* TODO check that other variables aren't used after this. *)
+      (* TODO check that storage argument type == contract storage type *)
+      (* TODO check that we aren't in a lambda. *)
+      not_impl "contract-call typing"
+    | A.TId(id) ->
+        let t_param, t_result = A.fresh_tvar(), A.fresh_tvar() in
+        let ctx, _ = Ctx.unify ctx t_f (A.TLambda(t_param, t_result)) in
+        ctx, t_param, t_result
+    | _ -> type_error "Applying a non-function" in
+  let ctx, _ = Ctx.unify ctx t_param t_arg in
+  ctx, t_result
+
+and typecheck_ETupleGet ctx e n =
+  let ctx, t_e = typecheck_expr ctx e in
+  begin match t_e with
+  | A.TTuple types ->
+    begin try ctx, List.nth types n 
+    with Failure _ -> type_error "Out of tuple index" end
+  | _ -> type_error "Not a tuple"
+  end
 
 and typecheck_EProduct ctx e_pairs =
   let tag0 = fst (List.hd e_pairs) in
@@ -358,10 +355,16 @@ let typecheck_store (ctx, fields) (tag, t) =
 
 let typecheck_contract ctx (declarations, storage_fields, code) =
   (* TODO is the arity of A.TApp() type properly checked? *)
+
+  (* Incorporate type declarations in the context. *)
   let ctx = List.fold_left typecheck_decl ctx declarations in
+
+  (* Turn store declarations into a sum declaration and product. *)
   let ctx, store_fields = List.fold_left typecheck_store (ctx, []) storage_fields in
   let ctx = Ctx.add_product "@" [] store_fields ctx in
   let ctx = Ctx.add_evar "@" ([], A.TApp("@", [])) ctx in
+
+  (* Compile the code itself *)
   let ctx, t = typecheck_expr ctx code in
   let param = A.fresh_tvar ~prefix:"param" () in
   let result = A.fresh_tvar ~prefix:"result" () in

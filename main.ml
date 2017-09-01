@@ -37,24 +37,33 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
     | String s -> log("Reading string "^s); s, Lexing.from_string(s)
   in
   log "Parsing file";
-  let (ast_type_decl, ast_store_decl, ast_code) as ast = Parser.main Lexer.read lexstream in
+  let (ast_type_decl, ast_store_decl, ast_code) as ast = 
+    try Parser.main Lexer.read lexstream with 
+    | Lexer.Lexing_error msg as e -> print_endline("Lexing error: "^msg); raise e 
+    | Parser.Error as e -> 
+      print_endline("parsing: error at K."^string_of_int (Lexing.lexeme_start lexstream));
+      raise e
+  in
   print_endline (String_of_ast.string_of_contract ast^"\n");
   if type_p || intermediate_p || compile_p then begin
 
     log "Typechecking";
-    let ctx, t_store, t_code = Typecheck.typecheck_contract Standard_ctx.ctx ast in
+    let ctx = Standard_ctx.ctx in
+    let ctx, t_store, t_code = Typecheck.typecheck_contract ctx ast in
 
     log ("Typechecked with resulting type: "^String_of_ast.string_of_type t_code);
     print_endline ("\nContext:\n"^Typecheck_ctx.string_of_t ctx);
     if intermediate_p || compile_p then begin
 
       log "Intermediate tree";
-      let i = Intermediate_of_ast.compile_expr ctx ast_code in
-      print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr i);
+      let interm = Intermediate_of_ast.compile_expr ctx ast_code in
+      print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr interm);
+
       if compile_p then
         log "Compiling";
-        let it_store = Intermediate_of_ast.compile_etype ctx t_store in
-        let code = Michelson_of_intermediate.compile_contract it_store i in
+        let t_store = Intermediate_of_ast.compile_etype ctx t_store in
+        let code = Michelson_of_intermediate.compile_contract t_store interm in
+
         match output_spec with
         | None -> print_endline code
         | Some name ->

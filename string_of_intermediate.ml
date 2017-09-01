@@ -54,9 +54,9 @@ let rec string_of_untyped_expr e =
   | ELetIn(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
   | EApp(f, args) -> "("^sep_list " " r (f::args)^")"
   | EProduct x  -> "("^sep_list ", " r x^")"
-  | ESum (i, n, x) -> sprintf "<%d>%s" i (r x)
-  | EProductGet(x, i, n) -> sprintf "%s.<%d>" (r x) i
-  | EProductSet(x, i, n, y) -> sprintf "%s.<%d> <- %s" (r x) i (r y)
+  | ESum (i, n, x) -> sprintf "<%d|%d>%s" i n (r x)
+  | EProductGet(x, i, n) -> sprintf "%s.<%d|%d>" (r x) i n
+  | EProductSet(x, i, n, y) -> sprintf "%s.<%d|%d> <- %s" (r x) i n (r y)
   | EStoreSet(i, x, y) -> sprintf "@%d <- %s; %s" i (r x) (r y)
   | ESumCase(e, cases) ->
     let f i (v, _, e_case) = sprintf "<%d>(%s): %s" i v (r e_case) in

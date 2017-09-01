@@ -2,6 +2,7 @@ open Printf
 open Utils
 module I = Intermediate
 module P = String_of_intermediate
+module Stk_S = Compile_stack_store
 
 let _DEBUG_ =true
 let debug_indent = ref 0
@@ -88,11 +89,11 @@ and compile_primitive stk name args t_result =
     "set-mem", "MEM"; "set-update", "UPDATE";
     "map-mem", "MEM"; "map-get", "GET"; "map-update", "UPDATE"; "map-map", "MAP";
     "list-map", "MAP";
-    "EQ", "CMPEQ"; "LT", "CMPLT"; "LE", "CMPLE"; "GE", "CMPGE"; "GT", "CMPGT"; "CONCAT", "CONCAT"
+    "EQ", "CMPEQ"; "LT", "CMPLT"; "LE", "CMPLE"; "GE", "CMPGE"; "GT", "CMPGT";
   ] in
 
   let simple_operators = [
-    "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"; "AND"; "OR"; "XOR"] in
+    "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"; "AND"; "OR"; "XOR"; "CONCAT"] in
 
   let c_args args = (* Compiles and stacks all arguments, discards resulting stack. *)
     let stk, code = List.fold_left
@@ -235,13 +236,35 @@ and compile_ESumCase stk test cases it =
     (None, it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
 
 
-let compile_contract it_store = function
-  | I.ELambda([(param, it_param)], (e_body, t_body as body)), t_lambda ->
-    let stk, code = compile_typed_expr [(Some param, it_param); (Some "@", it_store)] body in
-    let code = sprintf "DUP; CDR; SWAP; CAR # store/%s split\n%sDIP { %s } # remove %s\nPAIR; # group result and store\n"
-      param code (sep_list "; " (fun _ -> "DROP") (List.tl (List.tl (stk)))) param in
-    let code = sprintf "parameter %s;\nstorage %s;\nreturn %s;\ncode { %s}\n"
-                (compile_etype it_param) (compile_etype it_store) (compile_etype t_body) code in
-    let code = Code_format.indent '{' '}' code in
+let compile_contract t_user_store expr = 
+  match expr with
+  | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
+    Stk_S.reset();
+
+    let dummy_compiler_item = (Some "%compiler-store%", I.TPrim("%compiler-store%", [])) in
+    let user_item =  (Some "@", t_user_store) in
+    let stk = [(Some v_param, t_param); dummy_compiler_item; user_item] in
+    let stk, code = compile_typed_expr stk body in
+
+    let t_compiler_store = Stk_S.get() in
+    let t_stores = I.TProduct(None, lazy [t_compiler_store; t_user_store]) in
+
+    print_endline("Store type: "^String_of_intermediate.string_of_etype t_user_store);
+
+    (* Piece everything together*)
+    let code = Code_format.indent '{' '}' (
+      sprintf "parameter %s;\n" (compile_etype t_param) ^
+      sprintf "storage %s;\n" (compile_etype t_stores) ^
+      sprintf "return %s;\n" (compile_etype t_body) ^
+      sprintf "code { DUP; CDR; SWAP; CAR; # spilt %s/stores\n" v_param ^
+      sprintf "DIP { DUP; CDR; SWAP; CAR }; # split user/compiler stores\n"^
+      sprintf "%s" code ^
+      sprintf "DIP { DROP }; # remove %s\n" v_param ^
+      sprintf "DIP { PAIR }; # group user/compiler stores\n"^
+      sprintf "PAIR; # group result and store\n" ^
+      sprintf "}\n"
+    ) in
+
     code
+
   | _ -> unsound "Bad contract type"

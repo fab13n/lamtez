@@ -158,33 +158,23 @@ let rec compile_expr ctx e =
 
   | A.ETypeAnnot (e, t) -> c e
 
-let compile_contract ctx (type_declarations, store_fields, expr) =
-    (* Declarations are already passed in ctx thanks to typechecking;
-     * store_fields are not. *)
-    let n_contract_calls =
-      let rec forbidden list where =
-        if List.exists (fun e -> count e > 0) list
-        then unsupported ("Contracts forbidden in "^where) else 0
-      and count = function
-      | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> 0
-      | A.ELambda(_, _, e) -> forbidden [e] "functions"
-      | A.EApp(e0, e1) -> forbidden [e0; e1] "function applications"
-      | A.EBinOp(e0, _, e1) -> forbidden [e0; e1] "binary operators"
-      | A.EProductSet(e0, _, e1) -> forbidden [e0; e1] "product updates"
-      | A.EStoreSet(_, e0, e1) -> forbidden [e0; e1] "stored field updates"
-      | A.ETuple(list) -> forbidden list "tuples"
-      | A.ETupleGet(e, _) -> count e
-      | A.EProduct(list) -> forbidden (List.map snd list) "product types"
-      | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _) -> count e
-      | A.ELetIn(_, _, e0, e1) -> count e0 + count e1
-      | A.ESumCase(e, list) ->
-        List.fold_left (fun n (_, (_, e)) -> n+count e) (count e) list
-      in count expr in
-    let store_type = Ctx.product_of_name ctx "@" in
+let check_contract_calls expr = 
+  let rec forbidden list where =
+    if List.exists (fun e -> count e > 0) list
+    then unsupported ("Contract calls forbidden in "^where) else 0
+  and count = function
+  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> 0
+  | A.ELambda(_, _, e) -> forbidden [e] "functions"
+  | A.EApp(e0, e1) -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(e0, _, e1) -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(e0, _, e1) -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, e0, e1) -> forbidden [e0; e1] "stored field updates"
+  | A.ETuple(list) -> forbidden list "tuples"
+  | A.ETupleGet(e, _) -> count e
+  | A.EProduct(list) -> forbidden (List.map snd list) "product types"
+  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _) -> count e
+  | A.ELetIn(_, _, e0, e1) -> count e0 + count e1
+  | A.ESumCase(e, list) ->
+    List.fold_left (fun n (_, (_, e)) -> n+count e) (count e) list
+  in count expr
 
-    let stack_store_type = I.TSum(None, lazy []) in
-    (* quel type donner au champ de sauvegarde ? Pour l'instant je ne le connais pas,
-     * comme je ne l'utiliserai que pour les contract-call je peux le gerer spécialement (il doit juste etre imprimable)
-     * -> je vais le laisser comme une primitive.
-     *)
-    ()

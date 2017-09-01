@@ -114,7 +114,7 @@ let tuple n =
 
 (* Retrieve the i-th element in an n elements product *)
 let product_get i n =
-  if n=1 then "" else begin
+  if n=1 then "# NOOP" else begin
     let p = List.nth (paths n) i in
     let x = List.fold_left (fun acc b -> acc^if b then "D" else "A") "" p in
     "C"^x^"R"
