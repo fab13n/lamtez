@@ -43,7 +43,7 @@ rule read = parse
 | '#' [^'\r' '\n']* ['\r' '\n'] {read lexbuf}
 | "type" {TYPE}
 | "let" {LET}
-| "in" {IN}
+| ';' {SEMICOLON}
 | "<-" {LEFT_ARROW}
 | "\\/" {FORALL}
 | '@' {STORE}

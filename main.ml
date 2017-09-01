@@ -2,6 +2,8 @@ open Utils
 
 type input = File of string | String of string
 
+type action = Parse | Typecheck | Intermediate | Michelson
+
 let parse_args () =
   let type_p = ref false in
   let compile_p = ref false in
@@ -11,9 +13,9 @@ let parse_args () =
   let add_string s = inputs := String s :: !inputs in
   let set_output s = output := Some s in
   let spec_list = [
-     "compile", Arg.Set compile_p, "Compile files"; 
-     "typecheck", Arg.Set type_p, "Typecheck files"; 
-     "string", Arg.String add_string, "String input"; 
+     "compile", Arg.Set compile_p, "Compile files";
+     "typecheck", Arg.Set type_p, "Typecheck files";
+     "string", Arg.String add_string, "String input";
      "output", Arg.String set_output, "Output file";
      "intermediate", Arg.Set intermediate_p, "Intermediate tree";
   ] in
@@ -36,23 +38,23 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
   in
   log "Parsing file";
   let (ast_type_decl, ast_store_decl, ast_code) as ast = Parser.main Lexer.read lexstream in
-  print_endline (TreePrint.string_of_program ast^"\n");
+  print_endline (String_of_ast.string_of_contract ast^"\n");
   if type_p || intermediate_p || compile_p then begin
 
     log "Typechecking";
-    let ctx, t_store, t_code = Typing.typecheck_contract DefaultContext.ctx ast in
+    let ctx, t_store, t_code = Typecheck.typecheck_contract Standard_ctx.ctx ast in
 
-    log ("Typechecked with resulting type: "^TreePrint.string_of_type t_code);
-    print_endline ("\nContext:\n"^TypingContext.string_of_t ctx); 
+    log ("Typechecked with resulting type: "^String_of_ast.string_of_type t_code);
+    print_endline ("\nContext:\n"^Typecheck_ctx.string_of_t ctx);
     if intermediate_p || compile_p then begin
 
       log "Intermediate tree";
-      let i = Interm_of_lamtez.compile_exprT ctx ast_code in
-      print_endline ("\nIntermediate tree:\n"^Interm_of_lamtez.string_of_iTypedExpr i);
+      let i = Intermediate_of_ast.compile_expr ctx ast_code in
+      print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr i);
       if compile_p then
         log "Compiling";
-        let it_store = Interm_of_lamtez.compile_typeT ctx t_store in
-        let code = Compile.compile_contract it_store i in
+        let it_store = Intermediate_of_ast.compile_etype ctx t_store in
+        let code = Michelson_of_intermediate.compile_contract it_store i in
         match output_spec with
         | None -> print_endline code
         | Some name ->

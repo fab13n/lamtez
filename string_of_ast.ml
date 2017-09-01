@@ -1,10 +1,7 @@
-open Tree
+open Utils
+open Ast
 
-let sep_list separator f = function
-| [] -> ""
-| a :: b -> List.fold_left (fun acc e -> acc^separator^f e) (f a) b
-
-let rec string_of_type t = 
+let rec string_of_type t =
   let sot = string_of_type in
   match t with
   | TId s -> s
@@ -17,9 +14,9 @@ let rec string_of_type t =
 
 let string_of_decl_pair (tag, t) = tag^": "^string_of_type t
 
-let string_of_type_decl d = 
+let string_of_type_decl d =
   let left =
-    match d with DSum(n, p, _) | DProduct(n, p, _) | DAlias(n, p, _) | DPrim(n, p) -> 
+    match d with DSum(n, p, _) | DProduct(n, p, _) | DAlias(n, p, _) | DPrim(n, p) ->
     "type "^sep_list " " (fun x->x) (n::p)
   in
   let right =
@@ -39,15 +36,15 @@ let string_of_scheme (vars, t) =
   else "∀ "^sep_list " " (fun x->x) vars^": "^string_of_type t
 
 let string_of_binop = function
-| BAdd -> "+" | BAnd -> "and" | BConcat -> "^" | BDiv -> "÷" | BEq -> "=" 
+| BAdd -> "+" | BAnd -> "and" | BConcat -> "^" | BDiv -> "÷" | BEq -> "="
 | BGe -> ">=" | BGt -> ">" | BLe -> "<=" | BLsl -> "<<" | BLsr -> ">>" | BLt -> "<"
 | BMul -> "×" | BNeq -> "≠" | BOr -> "or" | BSub -> "-" | BXor -> "xor"
 
 let string_of_unop = function UAbs -> "abs" | UNeg -> "-" | UNot -> "!"
 
-let rec string_of_expr e = 
+let rec string_of_expr e =
   let soe = string_of_expr in
-  match e with 
+  match e with
   | EString s -> "\""^s^"\""
   | ENat n -> string_of_int n
   | EInt n -> (if n<=0 then "+" else "")^string_of_int n
@@ -56,7 +53,7 @@ let rec string_of_expr e =
   | ESig s -> "sig:"^s
   | EId s -> s
   | ELambda(_) ->
-    let rec f = function 
+    let rec f = function
       | ELambda(v, t, e) -> "("^v^": "^string_of_scheme t^") "^f e
       | e -> ": "^soe e in
     "(λ"^f e^")"
@@ -67,14 +64,14 @@ let rec string_of_expr e =
   | EProduct(pairs) -> "{"^sep_list ", " (fun (tag, e) -> tag^" "^soe e) pairs^"}"
   | EProductGet(e0, tag) -> soe e0^"."^tag
   | EProductSet(e0, tag, e1) -> soe e0^"."^tag^" <- "^soe e1
+  | EStoreSet(v, e0, e1) -> "@"^v^" <- "^soe e0^"; "^soe e1
   | ESum(tag, e0) -> tag^" "^soe e0
   | ESumCase(e0, triplets) -> "("^soe e0^" ? "^sep_list " | " (fun (tag, (v, e)) -> tag^": "^soe e) triplets^")"
   | EBinOp(e0, op, e1) -> "("^soe e0^" "^string_of_binop op^" "^soe e1^")"
   | EUnOp(op, e0) -> string_of_unop op^soe e0
   | ETypeAnnot(e0, t) -> "("^soe e0^": "^string_of_type t^")"
 
-let string_of_program (d, s, e) =
+let string_of_contract (d, s, e) =
   sep_list "\n" string_of_type_decl d ^ "\n" ^
   sep_list "\n" string_of_store_decl s ^ "\n" ^
   string_of_expr e
-

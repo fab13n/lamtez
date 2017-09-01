@@ -1,13 +1,22 @@
-type storage = Key key * Value string * Fee tez
-\(parameter: option (sig*string)) storage:
+type data = string
+type data_update = Sig: sig * Data: data
+type operation = option (sig * string)
+
+@key  :: key
+@data :: data
+@fee  :: tez
+
+\(parameter :: operation) :: data:
 ( parameter ?
-| None: ( self-amount >= storage.Fee ?
+| None: ( self-amount >= @fee ?
         | False: fail
-        | True: (storage.Value, storage)
+        | True:  @data
         )
-| Some ss:
-  ( crypto-check storage.Key ss.0 ss.1 ?
+| Some signed_data:
+  ( crypto-check @key signed_data.Sig signed_data.Data ?
   | False: fail
-  | True: (ss.1, {Key storage.Key, Value ss.1, Fee storage.Fee})
+  | True:
+    @data <- signed_string.Data;
+    signed_string.Data
   )
 )

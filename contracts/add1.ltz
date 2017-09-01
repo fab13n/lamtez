@@ -1,1 +1,1 @@
-\parameter storage: (parameter + 1, ())
+\parameter: parameter + 1

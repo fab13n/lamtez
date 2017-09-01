@@ -1,7 +1,7 @@
 let _DEBUG_ = false
 
 (* Indent code in a Michelson-compliant way. *)
-let indent open_char close_char code = 
+let indent open_char close_char code =
   let lines = String.split_on_char '\n' code in
   let rec f (open_braces, indented_lines, prev_closing_indent) line =
     let line = String.trim line in
@@ -15,7 +15,7 @@ let indent open_char close_char code =
       if line = String.make 1 close_char then Some(List.hd open_braces) else None in
     let indented_line = String.make indentation ' '^line in
     let open_braces = ref open_braces in
-    String.iteri 
+    String.iteri
       ( fun i k ->
         if      k = open_char  then open_braces := i :: !open_braces
         else if k = close_char then open_braces := List.tl !open_braces
@@ -36,5 +36,5 @@ let endline_regexp = Str.regexp ";? *\\(#.*\\)?\n"
 
 (* Remove comments at ends-of-lines and replace returns with semicolons,
  * thus producing a single-line Michelson code.*)
-let single_line code = 
+let single_line code =
   Str.global_replace endline_regexp "; " code

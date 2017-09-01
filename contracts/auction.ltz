@@ -1,0 +1,4 @@
+# 
+
+@end_date :: option time
+@raising_delay : option nat

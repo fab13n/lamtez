@@ -1,5 +1,5 @@
 %{ 
-open Tree 
+open Ast
 %}
 %token <int> NAT
 %token <int> INT
@@ -10,17 +10,17 @@ open Tree
 %token <string> ID
 %token <string> TAG
 %token LPAREN RPAREN
-%token LAMBDA ARROW FORALL
-%token COMMA COLON LEFT_ARROW
+%token LAMBDA ARROW FORALL TYPE_ANNOT
+%token COMMA COLON SEMICOLON LEFT_ARROW
 %token <int> TUPLE_GET
 %token <string> PRODUCT_GET
 %token LBRACE RBRACE
 %token CASE BAR STORE
 %token EQ NEQ LE LT GE GT CONCAT
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
-%token TYPE LET IN
+%token TYPE LET
 %token EOF
-%start <Tree.programT> main
+%start <Ast.contract> main
 
 %right ARROW
 %nonassoc CASE
@@ -50,7 +50,7 @@ schemeT:
 type_decl: TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
 
 store_decl:
-| STORE name=tag_or_id COLON? t=typeT {(name, t)}
+| STORE name=tag_or_id TYPE_ANNOT t=typeT {(name, t)}
 
 composite_decl_rhs:
 | t=typeT {fun name params -> if name="primitive" && params=[] then DPrim(name, params) else DAlias(name, params, t)}
@@ -71,17 +71,18 @@ expr0:
 | LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(pe, pt, acc)) p e}
 | LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId "unit" | [e] -> e | p -> ETuple(p)}
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(p);}
-| LET p=parameter EQ e0=expr IN e1=expr {ELetIn(fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
+| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELetIn(fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(e, tag)}
 | e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(e, n)}
 | STORE s=tag_or_id  {EProductGet(EId("@"), s)}
-| STORE s=tag_or_id LEFT_ARROW e=expr {EProductSet(EId("@"), s, e)}
+| STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(s, e0, e1)}
 
 expr:
 | f=expr0 args=arg* {List.fold_left (fun acc arg -> EApp(acc, arg)) f args}
 | tag=TAG e=expr0? {match e with Some e -> ESum(tag, e) | None -> ESum(tag, EId "unit")}
 | e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(e, c)}
+| e=expr TYPE_ANNOT t=typeT {ETypeAnnot(e, t)}
 | a=expr EQ  b=expr {EBinOp(a, BEq, b)}
 | a=expr NEQ b=expr {EBinOp(a, BNeq, b)}
 | a=expr LE  b=expr {EBinOp(a, BLe, b)}
@@ -115,6 +116,6 @@ product_pair: tag=TAG COLON? expr=expr {tag, expr}
 
 parameter:
 | id=ID {id, ([], fresh_tvar())}
-| LPAREN id=ID COLON t=schemeT RPAREN {(id, t)}
+| LPAREN id=ID TYPE_ANNOT t=schemeT RPAREN {(id, t)}
 (* TODO support for irrefutable pattern (products and tuples),
  * by generating a LetIn(...) functor to apply to function/letin body. *)

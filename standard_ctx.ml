@@ -1,7 +1,7 @@
-open Tree
-open TypingContext
+open Ast
+open Typecheck_ctx
 
-let ctx = TypingContext.(empty
+let ctx = empty
   |> add_sum     "zero" [] []
   |> add_product "unit" [] []
   |> add_sum     "bool" [] ["False", tunit; "True", tunit]
@@ -26,15 +26,11 @@ let ctx = TypingContext.(empty
 
   (* contract manipulation *)
 
-  |> add_evar "contract-call" (* param -> tez -> contract param result -> storage -> result*storage *) 
-    (["param"; "result"; "storage"], 
-      tlambda [TId "param"; 
-               tprim0 "tez"; 
-               TApp("contract", [TId "param"; TId "result"]);
-               TId "storage";
-               TTuple[TId "result"; TId "storage"]])
-
-  |> add_evar "contract-create" 
+  |> add_evar "contract-call" (* contract p r -> p -> tez -> r *)
+    (["param"; "result"],
+      tlambda [TApp("contract", [TId "param"; TId "result"]);
+               TId "param"; tprim0 "tez"; TId "result"])
+  |> add_evar "contract-create"
     (* key -> key? -> bool -> bool -> tez -> (p*g -> r*g) -> g -> g -> contract p r *)
     (["param"; "storage"; "result"],
      tlambda [tprim0 "key"; toption (tprim0 "key");
@@ -68,9 +64,9 @@ let ctx = TypingContext.(empty
   (* crypto *)
 
   |> add_evar "crypto-hash" (["a"], TLambda(TId "a", tprim0 "string"))
-  |> add_evar "crypto-check" (* key -> signature -> signed_string -> bool *)
+  |> add_evar "crypto-check" (* key -> signature -> string -> bool *)
     ([], tlambda [tprim0 "key"; tprim0 "sig"; tprim0 "string"; tprim0 "bool"])
-  
+
   (* sets *)
 
   |> add_evar "set-empty" (["elt"], TApp("set", [TId "elt"]))
@@ -88,33 +84,33 @@ let ctx = TypingContext.(empty
                               TId "acc"])
 
   (* maps *)
-  
+
   |> add_evar "map-empty" (["k"; "v"], TApp("map", [TId "k"; TId "v"]))
-  |> add_evar "map-mem" 
-    (["k"; "v"], tlambda [TId "k"; 
+  |> add_evar "map-mem"
+    (["k"; "v"], tlambda [TId "k";
                           TApp("map", [TId "k"; TId "v"]);
                           tprim0 "bool"])
-  |> add_evar "map-get" 
-    (["k"; "v"], tlambda [TId "k"; 
+  |> add_evar "map-get"
+    (["k"; "v"], tlambda [TId "k";
                           TApp("map", [TId "k"; TId "v"]);
                           toption(TId "v")])
-  |> add_evar "map-update" 
-    (["k"; "v"], tlambda [TId "k"; 
+  |> add_evar "map-update"
+    (["k"; "v"], tlambda [TId "k";
                           toption (TId "v");
-                          TApp("map", [TId "k"; TId "v"]); 
+                          TApp("map", [TId "k"; TId "v"]);
                           TApp("map", [TId "k"; TId "v"])])
-  |> add_evar "map-map" 
+  |> add_evar "map-map"
     (["k"; "v0"; "v1"], tlambda [tlambda [TId "k"; TId "v0"; TId "v1"];
                                  TApp("map", [TId "k"; TId "v0"]);
                                  TApp("map", [TId "k"; TId "v1"])])
-  |> add_evar "map-reduce" 
+  |> add_evar "map-reduce"
     (["k"; "v"; "acc"], tlambda [tlambda [TId "k"; TId "v"; TId "acc"; TId "acc"];
                                  TApp("map", [TId "k"; TId "v"]);
                                  TId "acc";
                                  TId "acc"])
-  
+
   (* lists *)
-  
+
   |> add_evar "list-map"
     (["a"; "b"], tlambda [tlambda [TId "a"; TId "b"];
                           TApp("list", [TId "a"]);
@@ -124,5 +120,4 @@ let ctx = TypingContext.(empty
                             TApp("list", [TId "a"]);
                             TId "acc";
                             TId "acc"])
-  
-  )
+    
