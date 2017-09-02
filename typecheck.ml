@@ -78,12 +78,6 @@ and typecheck_EApp ctx f arg =
   let ctx, t_arg = typecheck_expr ctx arg in
   let ctx, t_param, t_result = match t_f with
     | A.TLambda(t_param, t_result) -> ctx, t_param, t_result
-    | A.TId("contract-call") ->
-      (* TODO contract-call is a variable name, not a type name, this test is wrong! *)
-      (* TODO check that other variables aren't used after this. *)
-      (* TODO check that storage argument type == contract storage type *)
-      (* TODO check that we aren't in a lambda. *)
-      not_impl "contract-call typing"
     | A.TId(id) ->
         let t_param, t_result = A.fresh_tvar(), A.fresh_tvar() in
         let ctx, _ = Ctx.unify ctx t_f (A.TLambda(t_param, t_result)) in

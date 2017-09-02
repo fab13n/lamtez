@@ -20,7 +20,7 @@ open Ast
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
 %token TYPE LET
 %token EOF
-%start <Ast.contract> main
+%start <Ast.contract> contract
 
 %right ARROW
 %nonassoc CASE
@@ -32,32 +32,31 @@ open Ast
 %left STAR DIV
 %%
 
-main: d=type_decl* s=store_decl* e=expr EOF {d, s, e}
+contract: d=etype_decl* s=store_decl* e=expr EOF {d, s, e}
 
+etype:
+| a=etype ARROW b=etype {TLambda(a, b)}
+| id=ID args=etype_arg* {if args=[] then TId(id) else TApp(id, args)}
+| t=etype_tuple {t}
 
-typeT:
-| a=typeT ARROW b=typeT {TLambda(a, b)}
-| id=ID args=type_arg* {if args=[] then TId(id) else TApp(id, args)}
-| t=type_tuple {t}
+etype_arg: id=ID {TId(id)} | t=etype_tuple {t}
+etype_tuple: LPAREN types=separated_nonempty_list(STAR, etype) RPAREN {match types with [t]->t | _ ->TTuple(types)}
 
-type_arg: id=ID {TId(id)} | t=type_tuple {t}
-type_tuple: LPAREN types=separated_nonempty_list(STAR, typeT) RPAREN {match types with [t]->t | _ ->TTuple(types)}
+scheme:
+| FORALL vars=ID* COLON t=etype {vars, t}
+| t=etype {[], t}
 
-schemeT:
-| FORALL vars=ID* COLON t=typeT {vars, t}
-| t=typeT {[], t}
-
-type_decl: TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
-
-store_decl:
-| STORE name=tag_or_id TYPE_ANNOT t=typeT {(name, t)}
+etype_decl: TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
 
 composite_decl_rhs:
-| t=typeT {fun name params -> if name="primitive" && params=[] then DPrim(name, params) else DAlias(name, params, t)}
+| t=etype {fun name params -> if name="primitive" && params=[] then DPrim(name, params) else DAlias(name, params, t)}
 | p0=composite_decl_pair STAR pp=separated_list(STAR, composite_decl_pair) {fun name params -> DProduct(name, params, p0::pp)}
 | p0=composite_decl_pair PLUS pp=separated_list(PLUS, composite_decl_pair) {fun name params -> DSum(name, params, p0::pp)}
 
-composite_decl_pair: tag=TAG COLON? t=typeT {(tag, t)}
+composite_decl_pair: tag=TAG COLON? t=etype {(tag, t)}
+
+store_decl:
+| STORE name=tag_or_id TYPE_ANNOT t=etype {(name, t)}
 
 expr0:
 | n=INT {EInt n}
@@ -82,7 +81,7 @@ expr:
 | f=expr0 args=arg* {List.fold_left (fun acc arg -> EApp(acc, arg)) f args}
 | tag=TAG e=expr0? {match e with Some e -> ESum(tag, e) | None -> ESum(tag, EId "unit")}
 | e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(e, c)}
-| e=expr TYPE_ANNOT t=typeT {ETypeAnnot(e, t)}
+| e=expr TYPE_ANNOT t=etype {ETypeAnnot(e, t)}
 | a=expr EQ  b=expr {EBinOp(a, BEq, b)}
 | a=expr NEQ b=expr {EBinOp(a, BNeq, b)}
 | a=expr LE  b=expr {EBinOp(a, BLe, b)}
@@ -116,6 +115,6 @@ product_pair: tag=TAG COLON? expr=expr {tag, expr}
 
 parameter:
 | id=ID {id, ([], fresh_tvar())}
-| LPAREN id=ID TYPE_ANNOT t=schemeT RPAREN {(id, t)}
+| LPAREN id=ID TYPE_ANNOT t=scheme RPAREN {(id, t)}
 (* TODO support for irrefutable pattern (products and tuples),
  * by generating a LetIn(...) functor to apply to function/letin body. *)

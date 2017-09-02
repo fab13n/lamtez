@@ -13,10 +13,14 @@ let dup n = "D"^String.make n 'U'^"P"
 let rec peek = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "DIP { %s }; SWAP" (peek (n-1))
 let rec poke = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "SWAP; DIP { %s }" (poke (n-1))
 
+(* Compose code instructions together in a signle line, with semicolon separators. *)
+let cc x = String.concat "; " (List.filter ((<>) "") x)
+
+
 let rec get_level stk v = match stk with
-| [] -> None
-| (Some v', _) :: _ when v=v' -> Some 1
-| _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
+  | [] -> None
+  | (Some v', _) :: _ when v=v' -> Some 1
+  | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
 
 let rec compile_etype t =
   let c = compile_etype in
@@ -31,11 +35,10 @@ let rec compile_etype t =
   | I.TSum(Some("option", [t']), _) -> sprintf "(option %s)" (c t')
   | I.TSum(_, lazy fields) -> Compile_composite.sum_type (List.map c fields)
 
-
-
 let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * string) =
   if _DEBUG_ then begin
-    print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_expr ie);
+    print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_untyped_expr ie);
+    (* print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_expr ie); *)
     incr debug_indent
   end;
   let stk, code = match ie with
@@ -56,7 +59,7 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     let stk', code = List.fold_left
       (fun (stk, code) field -> let stk, code' = compile_typed_expr stk field in stk, code^code')
       (stk, "") (List.rev fields) in
-    (None, it)::stk, code^Compile_composite.tuple(List.length fields)
+    (None, it)::stk, code^Compile_composite.product_make(List.length fields)
   | I.ESum(i, n, content) -> compile_ESum stk i n content it
   | I.EProductGet(ie, i, n) ->
     let _, code = compile_typed_expr stk ie in
@@ -157,7 +160,7 @@ and compile_ELambda stk params body it_lambda =
 and compile_EApp stk f args t_result = match f with
   | I.ELambda([(params, body)], et0), t_lambda -> not_impl "apply literal lambda"
   | (I.EId "contract-call", _) -> begin match args with
-    | [contract; amount; contract_arg] -> compile_contract_call stk contract amount contract_arg t_result
+    | [contract; contract_arg; amount] -> compile_contract_call stk contract contract_arg amount t_result
     | _ -> unsupported "partial application of contract-call"
     end
   | (I.EId(name), t_f) -> begin match get_level stk name with
@@ -166,27 +169,32 @@ and compile_EApp stk f args t_result = match f with
     end
   | _ -> unsound "Applying a non-function"
 
-and compile_contract_call stk contract amount contract_arg t_result =
-      (* in Michelson: \/ param result storage:  param -> tez -> contract param result -> storage -> result*storage *)
-      (* in Lamtez: \/ param result: contract -> param -> tez -> result *)
-      let stack_storage_type =
-        let stack_type = List.map snd stk in
-        let rec f = function [_] -> [] | t::x -> t::f x | [] -> assert false in
-        I.TProduct(None, lazy (f stack_type)) in
-      let stk' =
-        let rec f = function [x] -> [x] | _::x -> f x | [] -> assert false in
-        f stk in
-      let stk', c0 = compile_typed_expr stk' contract in
-      let stk', c1 = compile_typed_expr stk' amount in
-      let stk', c2 = compile_typed_expr stk' contract_arg in
+and compile_contract_call stk contract contract_arg amount t_result =
+  (* in Michelson: param : tez : contract param result : storage : [] -> result : storage : [] *)
+  (* in Lamtez: \/ param result: contract -> param -> tez -> result *)
 
-      let store_stack   = sprintf "2TUPLE %d; 2SUM %d/%d; PRODUCT_SET %d/%d" (List.length stk - 1) (-1) (-1) (-1) (-1) in
-      let restore_stack = sprintf "GET_PRODUCT %d/%d; GET_SUM %d/%d; EXPAND_PRODUCT %d" (-1) (-1) (-1) (-1) (List.length stk - 1) in
-      (None, t_result)::stk,
-      c0^c1^c2^
-      "DIIIP { "^store_stack^"} # Save the stack into storage\n"^
-      "TRANSFER_TOKENS;\n"^
-      "DIP { "^restore_stack^"}"
+  let stack_storage_type = (* All of the stack, except the final user storage *)
+    let stack_type = List.map snd stk in
+    let rec f = function [_] -> [] | t::x -> t::f x | [] -> assert false in
+    f stack_type in
+
+  let stk', c0 = compile_typed_expr stk contract in
+  let stk', c1 = compile_typed_expr stk' amount in
+  let stk', c2 = compile_typed_expr stk' contract_arg in
+
+  let n_stack_saving = string_of_int (Stk_S.add stack_storage_type) in
+
+  (None, t_result)::stk,
+  c0^c1^c2^
+  "DIIIP {\n"^
+   "SAVE_STACK "^n_stack_saving^";\n"^
+  "PAIR; # pack user store / stack store \n"^
+  "}\n"^
+  "TRANSFER_TOKENS;\n"^
+  "DIP { # Restore saved stack\n"^
+  "DUP; CDR; SWAP; CAR; # split user store / stack store\n"^
+  "RESTORE_STACK "^n_stack_saving^";\n"^
+  "}"
 
 and compile_ESum stk i n content it =
   match it with
@@ -203,24 +211,19 @@ and compile_ESum stk i n content it =
     | _ ->
       let types = List.map compile_etype types in
       let stk, code = compile_typed_expr stk content in
-      (None, it) ::List.tl stk, code^Compile_composite.sum i n types
+      (None, it) ::List.tl stk, code^Compile_composite.sum_make i types
     end
   | _ -> unsound "Not a sum type"
 
 and compile_EProductSet stk e_product i n e_field it =
   let n = match it with I.TProduct(_, lazy fields) -> List.length fields | _ -> assert false in
-
   let stk, c0 = compile_typed_expr stk e_product in
   let stk, c1 = compile_typed_expr stk e_field in
-
   (* Perform field update *)
-  let c2 = sprintf "%s # update field %d/%d\n" (Compile_composite.product_set i n) i n in
-
+  let c2 = sprintf "%s # update field <%d|%d>\n" (Compile_composite.product_set i n) i n in
   (* field removed from stack *)
   let stk = List.tl stk in
-
   stk, c0^c1^c2
-
 
 and compile_EStoreSet stk i e_field e_rest =
   let stk, c0 = compile_typed_expr stk e_field in
@@ -232,7 +235,7 @@ and compile_EStoreSet stk i e_field e_rest =
   (* Perform field update *)
   let c1 = sprintf "%s # PEEK %d user store\n" (peek store_level) store_level^
            sprintf "SWAP\n"^
-           sprintf "%s # update field %d/%d\n" (Compile_composite.product_set i n) i n^
+           sprintf "%s # update store field <%d|%d>\n" (Compile_composite.product_set i n) i n^
            sprintf "%s # POKE %d user store back\n" (poke (store_level-1)) (store_level-1) in
   (* field removed from stack *)
   let stk = List.tl stk in
@@ -263,36 +266,68 @@ and compile_ESumCase stk test cases it =
         i v (snd (compile_typed_expr ((Some v, t_v)::stk) ie)) v in
     (None, it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
 
+let patch_stack_store_operations code =
+  let re = Str.regexp "\n *\\(SAVE\\|RESTORE\\)_STACK +\\([0-9]+\\) *;? *\n" in
+  let save_stack i =
+    let _, all_prods = Stk_S.get_all() in
+    let this_prod, this_stack = Stk_S.get i in
+    "# Store stack "^String_of_intermediate.string_of_etype this_prod^":\n"^    
+    Compile_composite.product_make (List.length this_stack)^
+    " # pack "^string_of_int (List.length this_stack)^" elements as a product\n"^
+    Compile_composite.sum_make i (List.map compile_etype all_prods)^
+    " # Package in sum case\n"
+    
+  and restore_stack i =
+    let _, all_prods = Stk_S.get_all() in
+    let this_prod, this_stack = Stk_S.get i in
+    let n_sum = List.length all_prods in
+    let n_prod = List.length this_stack in
+    "# Restore stack "^String_of_intermediate.string_of_etype this_prod^":\n"^
+    Compile_composite.sum_get i n_sum^
+    " # Extract from storage\n"^
+    Compile_composite.product_split n_prod^
+    " # split in "^string_of_int n_prod^" elements\n"
+    
+  in let subst m =
+    "\n"^
+    ( match Str.matched_group 1 m, int_of_string (Str.matched_group 2 m) with
+    | "SAVE", n -> save_stack n
+    | "RESTORE", n -> restore_stack n
+    | _ -> assert false
+    )
+  in Str.global_substitute re subst code
 
 let compile_contract t_user_store expr = 
   match expr with
   | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
     Stk_S.reset();
 
-    let dummy_compiler_item = (Some "%compiler-store%", I.TPrim("%compiler-store%", [])) in
-    let user_item =  (Some "@", t_user_store) in
-    let stk = [(Some v_param, t_param); dummy_compiler_item; user_item] in
+    let stk = [(Some v_param, t_param); (Some "@", t_user_store)] in
     let stk, code = compile_typed_expr stk body in
 
-    let t_compiler_store = Stk_S.get() in
+    let t_compiler_store, _ = Stk_S.get_all() in
     let t_stores = I.TProduct(None, lazy [t_compiler_store; t_user_store]) in
 
     print_endline("Store type: "^String_of_intermediate.string_of_etype t_user_store);
 
     (* Piece everything together*)
-    let code = Code_format.indent '{' '}' (
+    let code =
       sprintf "parameter %s;\n" (compile_etype t_param) ^
+      sprintf "# %s\n" (String_of_intermediate.string_of_etype t_stores)^
       sprintf "storage %s;\n" (compile_etype t_stores) ^
       sprintf "return %s;\n" (compile_etype t_body) ^
       sprintf "code { DUP; CDR; SWAP; CAR; # split %s/stores\n" v_param ^
-      sprintf "DIP { DUP; CDR; SWAP; CAR }; # split user/compiler stores\n"^
+      sprintf "DIP { CDR }; # remove stack store\n"^
       sprintf "%s" code ^
       sprintf "DIP { DROP }; # remove %s\n" v_param ^
-      sprintf "DIP { PAIR }; # group user/compiler stores\n"^
+      sprintf "DIP {\nUNIT;\nSAVE_STACK 0;\nPAIR;\n}; # group user/compiler stores\n"^
       sprintf "PAIR; # group result and store\n" ^
       sprintf "}\n"
-    ) in
+    in
 
+    let code = patch_stack_store_operations code in
+    let code = Code_format.indent '{' '}' code in
     code
 
   | _ -> unsound "Bad contract type"
+

@@ -38,7 +38,7 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
   in
   log "Parsing file";
   let (ast_type_decl, ast_store_decl, ast_code) as ast = 
-    try Parser.main Lexer.read lexstream with 
+    try Parser.contract Lexer.read lexstream with 
     | Lexer.Lexing_error msg as e -> print_endline("Lexing error: "^msg); raise e 
     | Parser.Error as e -> 
       print_endline("parsing: error at K."^string_of_int (Lexing.lexeme_start lexstream));
@@ -57,7 +57,8 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
 
       log "Intermediate tree";
       let interm = Intermediate_of_ast.compile_expr ctx ast_code in
-      print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr interm);
+      print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_untyped_expr (fst interm));
+      (* print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr interm); *)
 
       if compile_p then
         log "Compiling";

@@ -1,0 +1,8 @@
+@c :: contract nat unit
+\(p :: nat):
+let _ = contract-call @c p tz0.10;
+let b = True;
+let _ = contract-call @c p tz0.20;
+let c = "Hello";
+let _ = contract-call @c p tz0.30;
+()

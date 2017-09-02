@@ -105,8 +105,8 @@ let rec compile_expr ctx e =
 
   | A.EApp _ as e ->
     let rec get = function A.EApp(f, a) -> let f', args = get f in f', a::args | e -> e, [] in
-    let f, args = get e in
-    I.EApp(c f, List.map c args), it
+    let f, rev_args = get e in
+    I.EApp(c f, List.rev_map c rev_args), it
 
   | A.ETuple(list) -> I.EProduct(List.map c list), it
 
@@ -169,21 +169,44 @@ let rec compile_expr ctx e =
 
 let check_contract_calls expr = 
   let rec forbidden list where =
-    if List.exists (fun e -> count e > 0) list
-    then unsupported ("Contract calls forbidden in "^where) else 0
-  and count = function
-  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> 0
-  | A.ELambda(_, _, e) -> forbidden [e] "functions"
-  | A.EApp(e0, e1) -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(e0, _, e1) -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(e0, _, e1) -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, e0, e1) -> forbidden [e0; e1] "stored field updates"
-  | A.ETuple(list) -> forbidden list "tuples"
-  | A.ETupleGet(e, _) -> count e
-  | A.EProduct(list) -> forbidden (List.map snd list) "product types"
-  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _) -> count e
-  | A.ELetIn(_, _, e0, e1) -> count e0 + count e1
-  | A.ESumCase(e, list) ->
-    List.fold_left (fun n (_, (_, e)) -> n+count e) (count e) list
-  in count expr
+    if List.exists f list
+    then unsupported ("Contract calls forbidden in "^where)
+    else false
+  and f = function
+  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
+  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _)       -> f e
+  | A.ESumCase(e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
+  | A.ELambda("call-contract", _, _)   -> false
+  | A.ELambda(_, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, e0, e1)             -> forbidden [e0; e1] "stored field updates"
+  | A.ETuple(list)                     -> forbidden list "tuples"
+  | A.EProduct(list)                   -> forbidden (List.map snd list) "product types"
+  | A.ETupleGet(e, _)                  -> f e
+  | A.ELetIn("call-contract", _, _, _) -> false
+  | A.ELetIn(_, _, e0, e1)             -> f e0 || f e1
+  in f expr
 
+let check_store_set expr =
+  let rec forbidden list where =
+    if List.exists f list
+    then unsupported ("Storage updates forbidden in "^where)
+    else false
+  and f = function
+  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
+  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _)       -> f e
+  | A.ESumCase(e, list) -> List.exists (fun (v, (_, e)) -> f e) list
+  | A.ELambda(_, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
+  | A.ETuple(list)                     -> forbidden list "tuples"
+  | A.ETupleGet(e, _)                  -> f e
+  | A.EProduct(list)                   -> forbidden (List.map snd list) "product types"
+  | A.ELetIn("call-contract", _, _, _) -> false
+  | A.ELetIn(_, _, e0, e1)             -> f e0 || f e1
+  in f expr
+  

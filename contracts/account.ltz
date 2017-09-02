@@ -25,7 +25,7 @@ type operation = Deposit key + Withdrawal withdrawal
 									  | False: Some (balance - w.Amount)  # update account
 									  );
 					@accounts <- map-update w.Key new_balance @accounts;
-					()
+                    contract-call (contract-get w.Key) () w.Amount
             )
           )
   )

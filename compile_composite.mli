@@ -1,8 +1,12 @@
-val sum : int -> int -> string list -> string
-val sum_case : string list -> string
-(* val product : string list -> string *)
-val tuple: int -> string
-val product_get : int -> int -> string
-val product_set : int -> int -> string
-val sum_type: string list -> string
-val product_type: string list -> string
+type code = string
+
+val sum_make: int -> code list -> code
+val sum_case: code list -> code
+val sum_get : int -> int -> code
+val sum_type: code list -> code
+
+val product_make : int -> code
+val product_get  : int -> int -> code
+val product_set  : int -> int -> code
+val product_split: int -> code
+val product_type : code list -> code
