@@ -39,7 +39,11 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
   log "Parsing file";
   let (ast_type_decl, ast_store_decl, ast_code) as ast = 
     try Parser.contract Lexer.read lexstream with 
-    | Lexer.Lexing_error msg as e -> print_endline("Lexing error: "^msg); raise e 
+    | Lexer.Lexing_error p ->
+      let msg = Printf.sprintf "File \"%s\", line %d, character %d: Lexing error"
+        p.pos_fname p.pos_lnum p.pos_cnum in
+      print_endline msg;
+      raise Exit
     | Parser.Error as e -> 
       print_endline("parsing: error at K."^string_of_int (Lexing.lexeme_start lexstream));
       raise e
@@ -76,8 +80,10 @@ let parse_file type_p compile_p intermediate_p output_spec input_spec =
 
 
 let main () =
-  let type_p, compile_p, intermediate_p, filenames, output = parse_args() in
-    List.map (parse_file type_p compile_p intermediate_p output) filenames
+  try
+    let type_p, compile_p, intermediate_p, filenames, output = parse_args() in
+    List.iter (parse_file type_p compile_p intermediate_p output) filenames
+  with Exit -> ()
 ;;
 
 main()

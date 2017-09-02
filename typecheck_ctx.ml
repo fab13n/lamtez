@@ -42,7 +42,7 @@ let string_of_t ctx =
   in
   let string_of_alias (name, (p, t)) = "type "^sep_list " " (fun x->x) (name::p)^" = "^sot t in
   let string_of_evar (name, s) = "val "^name^": "^sos s in
-  let is_not_dummy_alias = function name, ([], A.TApp(name', [])) -> false | _ -> true in
+  let is_not_dummy_alias = function name, ([], A.TApp(_, name', [])) -> false | _ -> true in
   sep_list "\n" (fun x->x) (List.flatten [
     List.map (string_of_comp " + ") (list_of_map ctx.sums);
     List.map (string_of_comp " * ") (list_of_map ctx.products) ;
@@ -66,16 +66,16 @@ let name_of_product_tag ctx tag = StringMap.find tag ctx.product_tags
 let decl_of_name ctx name =
   try
     let c = StringMap.find name ctx.sums
-    in A.DSum(name, c.type_params, c.cases)
+    in A.DSum(A.noloc, name, c.type_params, c.cases)
   with Not_found -> try
     let c = StringMap.find name ctx.products
-    in A.DProduct(name, c.type_params, c.cases)
+    in A.DProduct(A.noloc, name, c.type_params, c.cases)
   with Not_found -> try
     let params = StringMap.find name ctx.primitives
-    in A.DPrim(name, params)
+    in A.DPrim(A.noloc, name, params)
   with Not_found -> try
     let (params, t) = StringMap.find name ctx.aliases
-    in A.DAlias(name, params, t)
+    in A.DAlias(A.noloc, name, params, t)
   with Not_found ->
     raise Not_found
 
@@ -84,10 +84,10 @@ let check_fresh_name ctx name =
   || StringMap.mem name ctx.products
   || StringMap.mem name ctx.aliases
   || StringMap.mem name ctx.primitives
-  then type_error ("duplicate type name "^name)
+  then type_error A.noloc ("duplicate type name "^name)
 
 let check_fresh_tag map cases =
-  List.iter (fun (tag, _) -> if StringMap.mem tag map then type_error ("duplicate tag "^tag)) cases
+  List.iter (fun (tag, _) -> if StringMap.mem tag map then type_error A.noloc ("duplicate tag "^tag)) cases
 
 let add_alias name scheme ctx =
   check_fresh_name ctx name;
@@ -97,7 +97,7 @@ let add_composite names_map tags_map aliases_map name type_params cases ctx =
   check_fresh_name ctx name;
   check_fresh_tag ctx.sum_tags cases;
   check_fresh_tag ctx.product_tags cases;
-  ( (if type_params<>[] then aliases_map else StringMap.add name ([], A.TApp(name, [])) aliases_map),
+  ( (if type_params<>[] then aliases_map else StringMap.add name ([], A.TApp(A.noloc, name, [])) aliases_map),
     StringMap.add name {type_params; cases} names_map,
     List.fold_left (fun tags_map (tag, _) -> StringMap.add tag name tags_map) tags_map cases)
 
@@ -114,7 +114,7 @@ let add_product name type_params cases ctx =
 let add_prim name type_params ctx =
   check_fresh_name ctx name;
   let ctx = if type_params<>[] then ctx else
-     add_alias name ([], A.TApp(name, [])) ctx in
+     add_alias name ([], A.TApp(A.noloc, name, [])) ctx in
   let p = StringMap.add name type_params ctx.primitives in
   {ctx with primitives = p}
 
@@ -143,17 +143,17 @@ let instantiate_scheme (params, t) =
 let instantiate_composite name (params, d_pairs) =
   let subst = List.map (fun v -> (v, A.fresh_tvar())) params in
   let r (tag, t) = tag, List.fold_left (fun t (v, v') -> A.replace_tvar v v' t) t subst in
-  A.TApp(name, List.map snd subst), List.map r d_pairs
+  A.TApp(A.noloc, name, List.map snd subst), List.map r d_pairs
 
 (* Replace tvars with their values as much as possible, deep into a typeT *)
 let rec expand_type ctx t =
   let r = expand_type ctx in
   match t with
   | A.TFail -> t
-  | A.TLambda(t0, t1) -> A.TLambda(r t0, r t1)
-  | A.TApp(name, args) -> A.TApp(name, List.map r args)
-  | A.TTuple(types) -> A.TTuple(List.map r types)
-  | A.TId id -> (try r (instantiate_scheme (StringMap.find id ctx.aliases)) with Not_found -> t)
+  | A.TLambda(_, t0, t1) -> A.TLambda(A.noloc, r t0, r t1)
+  | A.TApp(_, name, args) -> A.TApp(A.noloc, name, List.map r args)
+  | A.TTuple(_, types) -> A.TTuple(A.noloc, List.map r types)
+  | A.TId(_, id) -> (try r (instantiate_scheme (StringMap.find id ctx.aliases)) with Not_found -> t)
 
 and expand_scheme ctx (v, t) =
   failwith "Check expand_scheme!";
@@ -161,7 +161,7 @@ and expand_scheme ctx (v, t) =
 
 and scheme_of_evar ctx name =
   try StringMap.find name ctx.evars
-  with Not_found -> type_error("Unbound variable "^name)
+  with Not_found -> type_error A.noloc ("Unbound variable "^name)
 
 let save_type e t ctx =
   {ctx with types_assoc = ExprMap.add e t ctx.types_assoc}
@@ -181,31 +181,33 @@ let list_fold_map2 f acc a_list b_list =
   acc, List.rev rev_c_list
 
 let rec unify ctx t0 t1 =
+  (* TODO: have a direction, to choose a prefered model for the result and report loc *)
   (* TODO: add awareness of nat <: int *)
   let t0 = expand_type ctx t0 in
   let t1 = expand_type ctx t1 in
   match t0, t1 with
   | A.TFail, t | t, A.TFail -> ctx, t
-  | A.TId id0, A.TId id1 ->
+  | A.TId(_, id0), A.TId(_, id1) ->
     if id0=id1 then ctx, t0 else
       (* TODO use better ordering, which favors manually created vars. *)
       let id0, id1 = min id0 id1, max id0 id1 in
       print_endline ("Constraint: var "^id1^" => var "^id0);
-      add_alias id1 ([], A.TId id0) ctx, A.TId id0
-  | A.TId id, t | t, A.TId id ->
+      add_alias id1 ([], A.TId(A.noloc, id0)) ctx, A.TId(A.noloc, id0)
+  | A.TId(_, id), t | t, A.TId(_, id) ->
       print_endline ("Constraint: var "^id^" => type "^P.string_of_type t);
       add_alias id ([], t) ctx, t
-  | A.TLambda(t00, t01), A.TLambda(t10, t11) ->
+  | A.TLambda(_, t00, t01), A.TLambda(_, t10, t11) ->
     let ctx, t0 = unify ctx t00 t10 in
     let ctx, t1 = unify ctx t01 t11 in
-    ctx, A.TLambda(t0, t1)
-  | A.TApp("nat", []), A.TApp("int", []) | A.TApp("int", []), A.TApp("nat", []) ->
-    ctx, A.TApp("nat", [])
-  | A.TApp(name0, args0), A.TApp(name1, args1)
+    ctx, A.TLambda(A.noloc, t0, t1)
+  | A.TApp(_, "nat", []), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TApp(_, "nat", []) ->
+    ctx, A.TApp(A.noloc, "nat", [])
+  | A.TApp(_, name0, args0), A.TApp(_, name1, args1)
     when name0=name1 && List.length args0 = List.length args1 ->
     let ctx, args_u = list_fold_map2 unify ctx args0 args1 in
-    ctx, A.TApp(name0, args_u)
-  | A.TTuple(a), A.TTuple(b) when List.length a = List.length b ->
+    ctx, A.TApp(A.noloc, name0, args_u)
+  | A.TTuple(_, a), A.TTuple(_, b) when List.length a = List.length b ->
     let ctx, c = list_fold_map2 unify ctx a b in
-    ctx, A.TTuple(c)
-  | _ -> type_error ("Not unifiable: "^P.string_of_type t0^" and "^P.string_of_type t1)
+    ctx, A.TTuple(A.noloc, c)
+  | _ -> type_error A.noloc ("Not unifiable: "^P.string_of_type t0^" and "^P.string_of_type t1)
+  (* TODO I really need locations here! maybe passed as explicit arg. *)

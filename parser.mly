@@ -1,5 +1,6 @@
 %{ 
 open Ast
+let noloc = None
 %}
 %token <int> NAT
 %token <int> INT
@@ -35,12 +36,12 @@ open Ast
 contract: d=etype_decl* s=store_decl* e=expr EOF {d, s, e}
 
 etype:
-| a=etype ARROW b=etype {TLambda(a, b)}
-| id=ID args=etype_arg* {if args=[] then TId(id) else TApp(id, args)}
+| a=etype ARROW b=etype {TLambda(noloc, a, b)}
+| id=ID args=etype_arg* {if args=[] then TId(noloc, id) else TApp(noloc, id, args)}
 | t=etype_tuple {t}
 
-etype_arg: id=ID {TId(id)} | t=etype_tuple {t}
-etype_tuple: LPAREN types=separated_nonempty_list(STAR, etype) RPAREN {match types with [t]->t | _ ->TTuple(types)}
+etype_arg: id=ID {TId(noloc, id)} | t=etype_tuple {t}
+etype_tuple: LPAREN types=separated_nonempty_list(STAR, etype) RPAREN {match types with [t]->t | _ ->TTuple(noloc, types)}
 
 scheme:
 | FORALL vars=ID* COLON t=etype {vars, t}
@@ -49,9 +50,9 @@ scheme:
 etype_decl: TYPE name=ID params=ID* EQ r=composite_decl_rhs {r name params}
 
 composite_decl_rhs:
-| t=etype {fun name params -> if name="primitive" && params=[] then DPrim(name, params) else DAlias(name, params, t)}
-| p0=composite_decl_pair STAR pp=separated_list(STAR, composite_decl_pair) {fun name params -> DProduct(name, params, p0::pp)}
-| p0=composite_decl_pair PLUS pp=separated_list(PLUS, composite_decl_pair) {fun name params -> DSum(name, params, p0::pp)}
+| t=etype {fun name params -> if name="primitive" && params=[] then DPrim(noloc, name, params) else DAlias(noloc, name, params, t)}
+| p0=composite_decl_pair STAR pp=separated_list(STAR, composite_decl_pair) {fun name params -> DProduct(noloc, name, params, p0::pp)}
+| p0=composite_decl_pair PLUS pp=separated_list(PLUS, composite_decl_pair) {fun name params -> DSum(noloc, name, params, p0::pp)}
 
 composite_decl_pair: tag=TAG COLON? t=etype {(tag, t)}
 
@@ -59,50 +60,50 @@ store_decl:
 | STORE name=tag_or_id TYPE_ANNOT t=etype {(name, t)}
 
 expr0:
-| n=INT {EInt n}
-| n=NAT {ENat n}
-| n=TEZ {ETez n}
-| n=TIMESTAMP {ETime n}
-| s=SIGNATURE {ESig s}
-| s=STRING {EString s} (* TODO Unescape *)
+| n=INT {EInt(noloc, n)}
+| n=NAT {ENat(noloc, n)}
+| n=TEZ {ETez(noloc, n)}
+| n=TIMESTAMP {ETime(noloc, n)}
+| s=SIGNATURE {ESig(noloc, s)}
+| s=STRING {EString(noloc, s)} (* TODO Unescape *)
 (* TODO support crypto keys *)
-| s=ID {EId s}
-| LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(pe, pt, acc)) p e}
-| LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId "unit" | [e] -> e | p -> ETuple(p)}
-| LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(p);}
-| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELetIn(fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
-| e=expr0 tag=PRODUCT_GET {EProductGet(e, tag)}
-| e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(e0, tag, e1)}
-| e=expr0 n=TUPLE_GET {ETupleGet(e, n)}
-| STORE s=tag_or_id  {EProductGet(EId("@"), s)}
-| STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(s, e0, e1)}
+| s=ID {EId(noloc, s)}
+| LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(noloc, pe, pt, acc)) p e}
+| LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId(noloc, "unit") | [e] -> e | p -> ETuple(noloc, p)}
+| LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(noloc, p);}
+| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(noloc, fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
+| e=expr0 tag=PRODUCT_GET {EProductGet(noloc, e, tag)}
+| e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(noloc, e0, tag, e1)}
+| e=expr0 n=TUPLE_GET {ETupleGet(noloc, e, n)}
+| STORE s=tag_or_id  {EProductGet(noloc, EId(noloc, "@"), s)}
+| STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(noloc, s, e0, e1)}
 
 expr:
-| f=expr0 args=arg* {List.fold_left (fun acc arg -> EApp(acc, arg)) f args}
-| tag=TAG e=expr0? {match e with Some e -> ESum(tag, e) | None -> ESum(tag, EId "unit")}
-| e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(e, c)}
-| e=expr TYPE_ANNOT t=etype {ETypeAnnot(e, t)}
-| a=expr EQ  b=expr {EBinOp(a, BEq, b)}
-| a=expr NEQ b=expr {EBinOp(a, BNeq, b)}
-| a=expr LE  b=expr {EBinOp(a, BLe, b)}
-| a=expr LT  b=expr {EBinOp(a, BLt, b)}
-| a=expr GE  b=expr {EBinOp(a, BGe, b)}
-| a=expr GT  b=expr {EBinOp(a, BGt, b)}
-| a=expr CONCAT b=expr {EBinOp(a, BConcat, b)}
-| a=expr OR b=expr {EBinOp(a, BOr, b)}
-| a=expr AND b=expr {EBinOp(a, BAnd, b)}
-| a=expr XOR b=expr {EBinOp(a, BXor, b)}
-| a=expr PLUS b=expr {EBinOp(a, BAdd, b)}
-| a=expr MINUS b=expr {EBinOp(a, BSub, b)}
-| a=expr STAR b=expr {EBinOp(a, BMul, b)}
-| a=expr DIV b=expr {EBinOp(a, BDiv, b)}
-| a=expr LSR b=expr {EBinOp(a, BLsr, b)}
-| a=expr LSL b=expr {EBinOp(a, BLsl, b)}
-| MINUS a=expr {EUnOp(UNeg, a)}
+| f=expr0 args=arg* {List.fold_left (fun acc arg -> EApp(noloc, acc, arg)) f args}
+| tag=TAG e=expr0? {match e with Some e -> ESum(noloc, tag, e) | None -> ESum(noloc, tag, EId(noloc, "unit"))}
+| e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(noloc, e, c)}
+| e=expr TYPE_ANNOT t=etype {ETypeAnnot(noloc, e, t)}
+| a=expr EQ  b=expr {EBinOp(noloc, a, BEq, b)}
+| a=expr NEQ b=expr {EBinOp(noloc, a, BNeq, b)}
+| a=expr LE  b=expr {EBinOp(noloc, a, BLe, b)}
+| a=expr LT  b=expr {EBinOp(noloc, a, BLt, b)}
+| a=expr GE  b=expr {EBinOp(noloc, a, BGe, b)}
+| a=expr GT  b=expr {EBinOp(noloc, a, BGt, b)}
+| a=expr CONCAT b=expr {EBinOp(noloc, a, BConcat, b)}
+| a=expr OR b=expr {EBinOp(noloc, a, BOr, b)}
+| a=expr AND b=expr {EBinOp(noloc, a, BAnd, b)}
+| a=expr XOR b=expr {EBinOp(noloc, a, BXor, b)}
+| a=expr PLUS b=expr {EBinOp(noloc, a, BAdd, b)}
+| a=expr MINUS b=expr {EBinOp(noloc, a, BSub, b)}
+| a=expr STAR b=expr {EBinOp(noloc, a, BMul, b)}
+| a=expr DIV b=expr {EBinOp(noloc, a, BDiv, b)}
+| a=expr LSR b=expr {EBinOp(noloc, a, BLsr, b)}
+| a=expr LSL b=expr {EBinOp(noloc, a, BLsl, b)}
+| MINUS a=expr {EUnOp(noloc, UNeg, a)}
 
 arg:
 | e=expr0 {e}
-| tag=TAG {ESum(tag, EId "unit")}
+| tag=TAG {ESum(noloc, tag, EId(noloc, "unit"))}
 | LPAREN e=expr RPAREN {e}
 
 tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}

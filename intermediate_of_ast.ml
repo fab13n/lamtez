@@ -24,22 +24,22 @@ let prim_translations = [
 let rec compile_etype ctx t =
   let c = compile_etype ctx in
   match t with
-  | A.TId id ->
+  | A.TId(_, id) ->
     begin match Ctx.expand_type ctx t with (* TODO the re-expansion shouldn't be necessary here *)
-    | A.TId id -> failwith ("unresolved type variable "^id)
+    | A.TId(_, id) -> failwith ("unresolved type variable "^id)
     | t -> c t
     end
   | A.TLambda _ as t ->
-    let rec get = function A.TLambda(a, b) -> let p, t = get b in a::p, t | t -> [], t in
+    let rec get = function A.TLambda(_, a, b) -> let p, t = get b in a::p, t | t -> [], t in
     let params, result = get t in
     I.TLambda(List.map c params, c result)
-  | A.TTuple(list) -> I.TProduct(None, lazy(List.map c list))
-  | A.TApp(name, args) -> begin match Ctx.decl_of_name ctx name with
-    | A.DProduct(name, params, fields) ->
+  | A.TTuple(_, list) -> I.TProduct(None, lazy(List.map c list))
+  | A.TApp(_, name, args) -> begin match Ctx.decl_of_name ctx name with
+    | A.DProduct(_, name, params, fields) ->
       I.TProduct(Some(name, List.map c args), lazy(List.map c (compile_decl_pairs params args fields)))
-    | A.DSum(name, params, cases) ->
+    | A.DSum(_, name, params, cases) ->
       I.TSum(Some(name, List.map c args), lazy(List.map c (compile_decl_pairs params args cases)))
-    | A.DPrim(name, params) ->
+    | A.DPrim(_, name, params) ->
       let name = try List.assoc name prim_translations with Not_found -> name in
       I.TPrim(name, List.map c args)
     | A.DAlias _ -> unsound "Aliases should have been simplified by now"
@@ -57,17 +57,17 @@ let binop_dic = [
 let unop_dic = [A.UNot, "NOT"; A.UNeg, "NEG"; A.UAbs, "ABS"]
 
 let get_product_tags ctx (t:A.etype) =
-  let name = match t with A.TApp(name, _)  -> name | _ -> unsound "bad product type" in
+  let name = match t with A.TApp(_, name, _)  -> name | _ -> unsound "bad product type" in
   let tags = match Ctx.decl_of_name ctx name with
-    | A.DProduct(_, type_params, fields) -> List.map fst fields
+    | A.DProduct(_, _, type_params, fields) -> List.map fst fields
     | d -> unsound ("Not a product type: "^P.string_of_type t^" = "^P.string_of_type_decl d) in
   tags
 
 let get_sum_decl_cases ctx (t:A.etype) =
   match t with
-  | A.TApp(name, type_args)  ->
+  | A.TApp(_, name, type_args)  ->
     begin match Ctx.decl_of_name ctx name with
-    | A.DSum(_, type_params, cases) ->
+    | A.DSum(_, _, type_params, cases) ->
       List.map (fun (tag, t) -> tag, A.replace_tvars type_params type_args t) cases
     | d -> unsound ("Not a sum type: "^P.string_of_type t^" = "^P.string_of_type_decl d)
     end
@@ -81,70 +81,70 @@ let rec compile_expr ctx e =
 
   match e with
 
-  | A.ENat n | A.EInt n ->
+  | A.ENat(_, n) | A.EInt(_, n) ->
     let s = string_of_int n in
     let s = if n>=0 then s else "("^s^")" in
     I.ELit(s), it
 
-  | A.EString(s) -> I.ELit(sprintf "\"%s\"" s), it
-  | A.ETez(n)    -> I.ELit(sprintf "\"%d.%02d\"" (n/100) (n mod 100)), it
-  | A.ETime(s)   -> I.ELit(sprintf "\"%s\"" s), it
-  | A.ESig(s)    -> I.ELit(sprintf "\"%s\"" s), it
-  | A.EId(id)    -> I.EId id, it
+  | A.EString(_, s) -> I.ELit(sprintf "\"%s\"" s), it
+  | A.ETez(_, n)    -> I.ELit(sprintf "\"%d.%02d\"" (n/100) (n mod 100)), it
+  | A.ETime(_, s)   -> I.ELit(sprintf "\"%s\"" s), it
+  | A.ESig(_, s)    -> I.ELit(sprintf "\"%s\"" s), it
+  | A.EId(_, id)    -> I.EId id, it
 
   | A.ELambda _ as e ->
-    let rec get = function A.ELambda(a, _, b) -> let p, t = get b in a::p, t | t -> [], t in
+    let rec get = function A.ELambda(_, a, _, b) -> let p, t = get b in a::p, t | t -> [], t in
     let param_names, body = get e in
     let param_types = match it with I.TLambda(p, _) -> p | _ -> unsound "bad lambda type" in
     let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
     I.ELambda(typed_names, c body), it
 
-  | A.ELetIn(id, t, e0, e1) ->
+  | A.ELet(_, id, t, e0, e1) ->
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
     I.ELetIn(id, te0, te1), it1
 
   | A.EApp _ as e ->
-    let rec get = function A.EApp(f, a) -> let f', args = get f in f', a::args | e -> e, [] in
+    let rec get = function A.EApp(_, f, a) -> let f', args = get f in f', a::args | e -> e, [] in
     let f, rev_args = get e in
     I.EApp(c f, List.rev_map c rev_args), it
 
-  | A.ETuple(list) -> I.EProduct(List.map c list), it
+  | A.ETuple(_, list) -> I.EProduct(List.map c list), it
 
-  | A.ETupleGet(e_tuple, i) ->
+  | A.ETupleGet(_, e_tuple, i) ->
     let t_tuple = Ctx.retrieve_type ctx e_tuple in
     begin match t_tuple with
-    | A.TTuple(list) -> I.EProductGet(c e_tuple, i, List.length list), it
+    | A.TTuple(_, list) -> I.EProductGet(c e_tuple, i, List.length list), it
     | t -> unsound("Not a tuple type "^P.string_of_type t)
     end
-  | A.EProduct(fields) ->
+  | A.EProduct(_, fields) ->
     let tags = get_product_tags ctx e_type in
     I.EProduct (List.map (fun tag -> c (List.assoc tag fields)) tags), it
 
-  | A.EProductGet(e_product, tag) ->
+  | A.EProductGet(_, e_product, tag) ->
     let t_product = Ctx.retrieve_type ctx e_product in
     let tags = get_product_tags ctx t_product in
     let tag2num = List.mapi (fun i t -> t, i) tags in
     I.EProductGet(c e_product, List.assoc tag tag2num, List.length tags), it
 
-  | A.EProductSet(e_product, tag, e_field) ->
+  | A.EProductSet(_, e_product, tag, e_field) ->
     let t_product = Ctx.retrieve_type ctx e_product in
     let tags = get_product_tags ctx t_product in
     let tag2num = List.mapi (fun i t -> t, i) tags in
     let i = List.assoc tag tag2num and n = List.length tag2num in
     I.EProductSet(c e_product, i, n, c e_field), it
 
-  | A.EStoreSet(tag, e_field, e_rest) ->
-    let t_store = A.TApp("@", []) in
+  | A.EStoreSet(loc, tag, e_field, e_rest) ->
+    let t_store = A.TApp(loc, "@", []) in
     let tags = get_product_tags ctx t_store in
     let tag2num = List.mapi (fun i t -> t, i) tags in
     I.EStoreSet(List.assoc tag tag2num, c e_field, c e_rest), it
 
-  | A.ESum(tag, e) ->
+  | A.ESum(_, tag, e) ->
     let tags = get_sum_decl_cases ctx e_type in
     let tag2num = List.mapi (fun i (tag, _) -> tag, i) tags in
     I.ESum(List.assoc tag tag2num, List.length tags, c e), it
 
-  | A.ESumCase(e_test, e_cases) ->
+  | A.ESumCase(_, e_test, e_cases) ->
     (* TODO d_cases are generic. *)
     let t_test = Ctx.retrieve_type ctx e_test in
     let d_cases = get_sum_decl_cases ctx t_test in
@@ -154,18 +154,18 @@ let rec compile_expr ctx e =
     in
     I.ESumCase(c e_test, List.map (f e_cases) d_cases), it
 
-  | A.EBinOp(e0, op, e1) ->
+  | A.EBinOp(_, e0, op, e1) ->
     let (_, it0) as iet0 = c e0 and (_, it1) as iet1= c e1 in
     let lt = I.TLambda([it0; it1], it) in
     (* TODO: I.EId??? *)
     I.EApp((I.EId(List.assoc op binop_dic), lt), [iet0;  iet1]), it
 
-  | A.EUnOp(op, e) ->
+  | A.EUnOp(_, op, e) ->
     let (_, it') as iet' = c e in
     let lt = I.TLambda([it'], it) in
     I.EApp((I.EId(List.assoc op unop_dic), lt), [iet']), it
 
-  | A.ETypeAnnot (e, t) -> c e
+  | A.ETypeAnnot (_, e, t) -> c e
 
 let check_contract_calls expr = 
   let rec forbidden list where =
@@ -174,19 +174,19 @@ let check_contract_calls expr =
     else false
   and f = function
   | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
-  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _)       -> f e
-  | A.ESumCase(e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
-  | A.ELambda("call-contract", _, _)   -> false
-  | A.ELambda(_, _, e)                 -> forbidden [e] "functions"
-  | A.EApp(e0, e1)                     -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(e0, _, e1)                -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(e0, _, e1)           -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, e0, e1)             -> forbidden [e0; e1] "stored field updates"
-  | A.ETuple(list)                     -> forbidden list "tuples"
-  | A.EProduct(list)                   -> forbidden (List.map snd list) "product types"
-  | A.ETupleGet(e, _)                  -> f e
-  | A.ELetIn("call-contract", _, _, _) -> false
-  | A.ELetIn(_, _, e0, e1)             -> f e0 || f e1
+  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _)       -> f e
+  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
+  | A.ELambda(_, "call-contract", _, _)   -> false
+  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] "stored field updates"
+  | A.ETuple(_, list)                     -> forbidden list "tuples"
+  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
+  | A.ETupleGet(_, e, _)                  -> f e
+  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
   in f expr
 
 let check_store_set expr =
@@ -196,17 +196,17 @@ let check_store_set expr =
     else false
   and f = function
   | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
-  | A.EProductGet(e, _) | A.ESum(_, e) | A.EUnOp(_, e) | A.ETypeAnnot(e, _)       -> f e
-  | A.ESumCase(e, list) -> List.exists (fun (v, (_, e)) -> f e) list
-  | A.ELambda(_, _, e)                 -> forbidden [e] "functions"
-  | A.EApp(e0, e1)                     -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(e0, _, e1)                -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(e0, _, e1)           -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
-  | A.ETuple(list)                     -> forbidden list "tuples"
-  | A.ETupleGet(e, _)                  -> f e
-  | A.EProduct(list)                   -> forbidden (List.map snd list) "product types"
-  | A.ELetIn("call-contract", _, _, _) -> false
-  | A.ELetIn(_, _, e0, e1)             -> f e0 || f e1
+  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
+  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> f e) list
+  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
+  | A.ETuple(_, list)                     -> forbidden list "tuples"
+  | A.ETupleGet(_, e, _)                  -> f e
+  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
+  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
   in f expr
   

@@ -3,7 +3,7 @@
   open Lexing
   open Parser
 
-  exception Lexing_error of string
+  exception Lexing_error of Lexing.position
 
   (* Remove `a` characters on the left and `b` characters on the right of the next lexeme in `lexbuf`. *)
   let trim lexbuf a b =
@@ -70,6 +70,7 @@ rule read = parse
 
 | eof {EOF}
 
+| _ { raise(Lexing_error(Lexing.lexeme_start_p lexbuf))}
 
 {
   (* Trailer *)

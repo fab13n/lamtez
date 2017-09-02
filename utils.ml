@@ -2,12 +2,12 @@
 exception Unsupported of string
 exception Not_impl of string
 exception Unsound of string
-exception Typing of string
+exception Typing of Ast.loc * string
 
 let unsupported msg = raise (Unsupported msg)
 let not_impl msg = raise (Not_impl msg)
 let unsound msg = raise (Unsound msg)
-let type_error msg = raise (Typing msg)
+let type_error loc msg = raise(Typing(loc, msg))
 
 let sep_list sep f = function
 | [] -> ""
@@ -29,5 +29,5 @@ let list_fold_map f acc list =
  *)
 let list_assoc_map2 f a b =
   if List.sort compare (List.map fst a) <> List.sort compare (List.map fst b)
-  then type_error "different tag sets for composite type";
+  then type_error Ast.noloc "different tag sets for composite type"; (* TODO location *)
   List.map (fun (k, va) -> k, f k va (List.assoc k b)) a
