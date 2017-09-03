@@ -17,6 +17,7 @@ let ctx = empty
   |> add_prim    "set" ["a"]
   |> add_prim    "map" ["k"; "v"]
   |> add_prim    "contract" ["param"; "result"]
+  |> add_alias   "account" ([], tapp "contract" [tunit; tunit])
 
   (* misc. *)
 
