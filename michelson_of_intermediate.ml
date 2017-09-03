@@ -103,9 +103,9 @@ and compile_primitive stk name args t_result =
     "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"; "AND"; "OR"; "XOR"; "CONCAT"] in
 
   let c_args args = (* Compiles and stacks all arguments, discards resulting stack. *)
-    let stk, code = List.fold_left
-      (fun (stk, c) arg -> let stk, c' = compile_typed_expr stk arg in stk, c^c')
-      (stk, "") args in
+    let stk, code = List.fold_right
+      (fun arg (stk, c) -> let stk, c' = compile_typed_expr stk arg in stk, c^c')
+      args (stk, "") in
     code in
   (*
   let c_arg level arg =
@@ -256,7 +256,7 @@ and compile_EStoreSet stk i e_field e_rest =
           match t_store with I.TProduct(_, lazy fields) -> List.length fields | _ -> assert false in
   (* Perform field update *)
   let c1 = sprintf "%s # PEEK %d user store\n" (peek store_level) store_level^
-           sprintf "SWAP\n"^
+           sprintf "SWAP; # Get updated value on top\n"^
            sprintf "%s # update store field <%d|%d>\n" (Compile_composite.product_set i n) i n^
            sprintf "%s # POKE %d user store back\n" (poke (store_level-1)) (store_level-1) in
   (* field removed from stack *)
@@ -355,6 +355,7 @@ and compile_data_sum i n e t_sum = match i, t_sum with
   | 1, I.TSum(Some("bool", []), _) -> "True"
   | 0, I.TSum(Some("option", [_]), _) -> "None"
   | 1, I.TSum(Some("option", [_]), _) -> "(Some "^compile_data e^")"
+  (* TODO lists built with Cons/Nil *)
   | _ -> Compile_composite.sum_data i n (compile_data e)
 
 let compile_contract i_contract = 
