@@ -1,0 +1,15 @@
+@v1 :: bool
+@v2 :: int
+@v3 :: nat
+@v4 :: string
+@v5 :: option bool
+@v6 :: option int
+
+\(p :: unit):
+@v1 <- True;  # OK
+@v2 <- +2;  # OK
+@v3 <- 3; # KO!
+@v4 <- "Four";  # KO!
+@v5 <- Some(False); # KO!
+@v6 <- Some +6; # OK
+()

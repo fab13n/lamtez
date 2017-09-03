@@ -176,12 +176,12 @@ let product_set i n =
   if n=1 then "SWAP; DROP" else
     let path = List.nth (paths n) i in
     let rec f (undo, redo) = function
-    | true -> "DUP; CAR; SWAP; CDR" :: undo, "PAIR" :: redo
-    | false -> "DUP; CDR; SWAP; CAR" :: undo, "SWAP; PAIR" :: redo
+    | true -> "DUP; CAR; SWAP; CDR" :: undo, "SWAP; PAIR" :: redo
+    | false -> "DUP; CDR; SWAP; CAR" :: undo, "PAIR" :: redo
     in 
     let undo, redo = List.fold_left f ([], []) path in
     Printf.sprintf "DIP { %s }; # open up product\n SWAP; DROP; # replace field %d/%d\n %s; # rebuild product\n"
-      (cc (List.rev undo)) i n (cc (List.rev redo))
+      (cc (List.rev undo)) i n (cc redo)
 
 (* Generates code which splits a product, i.e. pushes all of its elements in order on the stack
  * (TODO first on top or first on bottom ?)
