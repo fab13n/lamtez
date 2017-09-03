@@ -80,16 +80,17 @@ let rec compile_expr ctx e =
   let it = compile_etype ctx e_type in
 
   match e with
-
-  | A.ENat(_, n) | A.EInt(_, n) ->
-    let s = string_of_int n in
-    let s = if n>=0 then s else "("^s^")" in
-    I.ELit(s), it
-
-  | A.EString(_, s) -> I.ELit(sprintf "\"%s\"" s), it
-  | A.ETez(_, n)    -> I.ELit(sprintf "\"%d.%02d\"" (n/100) (n mod 100)), it
-  | A.ETime(_, s)   -> I.ELit(sprintf "\"%s\"" s), it
-  | A.ESig(_, s)    -> I.ELit(sprintf "\"%s\"" s), it
+  | A.ELit(_, c) -> begin match c with
+    | A.LNat(_, n) | A.LInt(_, n) ->
+      let s = string_of_int n in
+      let s = if n>=0 then s else "("^s^")" in
+      I.ELit(s), it
+    | A.LString(_, s) -> I.ELit(sprintf "\"%s\"" s), it
+    | A.LTez(_, n)    -> I.ELit(sprintf "\"%d.%02d\"" (n/100) (n mod 100)), it
+    | A.LTime(_, s)   -> I.ELit(sprintf "\"%s\"" s), it
+    | A.LSig(_, s)    -> I.ELit(sprintf "\"%s\"" s), it
+    end
+  | A.EColl(_, k, list) -> I.EColl(k, List.map c list), it
   | A.EId(_, id)    -> I.EId id, it
 
   | A.ELambda _ as e ->
@@ -101,7 +102,7 @@ let rec compile_expr ctx e =
 
   | A.ELet(_, id, t, e0, e1) ->
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
-    I.ELetIn(id, te0, te1), it1
+    I.ELet(id, te0, te1), it1
 
   | A.EApp _ as e ->
     let rec get = function A.EApp(_, f, a) -> let f', args = get f in f', a::args | e -> e, [] in
@@ -173,9 +174,10 @@ let check_contract_calls expr =
     then unsupported ("Contract calls forbidden in "^where)
     else false
   and f = function
-  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
+  | A.ELit _ | A.EId _ -> false
   | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _)       -> f e
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
+  | A.EColl(_, _, list)                   -> forbidden list "collections"
   | A.ELambda(_, "call-contract", _, _)   -> false
   | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
@@ -195,9 +197,10 @@ let check_store_set expr =
     then unsupported ("Storage updates forbidden in "^where)
     else false
   and f = function
-  | A.ENat _ | A.EInt _ | A.EString _ | A.ETez _ | A.ETime _ | A.ESig _ | A.EId _ -> false
+  | A.ELit _ | A.EId _ -> false
   | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> f e) list
+  | A.EColl(_, _, list)                   -> forbidden list "collections"
   | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
   | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"

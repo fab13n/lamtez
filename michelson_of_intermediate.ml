@@ -47,8 +47,11 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     | Some n -> (Some name, it)::stk, dup n (* Bound variable; remember its name on stack too (might help making shorter DUU*Ps). *)
     | None -> (None, it)::stk, compile_primitive stk name [] it (* Free variable, must be a primitive. *)
     end
+  | I.EColl(Ast.CList, list) -> compile_EColl_CList stk list it
+  | I.EColl(Ast.CMap,  list) -> compile_EColl_CMap  stk list it
+  | I.EColl(Ast.CSet,  list) -> compile_EColl_CSet  stk list it
   | I.ELambda(params, body) -> compile_ELambda stk params body it
-  | I.ELetIn(v, ie0, ie1) ->
+  | I.ELet(v, ie0, ie1) ->
     let stk, c0 = compile_typed_expr stk ie0 in
     let stk = (Some v, snd ie0) :: List.tl stk in (* name the value just computed *)
     let stk, c1 = compile_typed_expr stk ie1 in
@@ -145,6 +148,24 @@ and compile_primitive stk name args t_result =
     | "list-reduce" -> not_impl "list-reduce"
     | _ -> not_impl ("Primitive "^name^" not implemented")
 
+and compile_EColl_CList stk list t_list =
+  let t_elt = match t_list with I.TPrim("list", [t_elt]) -> t_elt | _ -> assert false in
+  let stk = (None, t_list) :: stk in
+  let rec f = function
+    | [] -> ["NIL "^compile_etype t_elt]
+    | a :: b -> 
+      let _, c = compile_typed_expr stk a in
+      "CONS" :: c :: f b
+  in
+  stk, cc (List.rev (f list))
+
+and compile_EColl_CMap stk list t_map = 
+  let t_k, t_v = match t_map with I.TPrim("list", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
+  not_impl ""
+
+and compile_EColl_CSet stk list t_set = 
+  let t_elt = match t_set with I.TPrim("set", [t_elt]) -> t_elt | _ -> assert false in
+  not_impl ""
 
 and compile_ELambda stk params body it_lambda =
   match params, body with
@@ -297,6 +318,40 @@ let patch_stack_store_operations code =
     )
   in Str.global_substitute re subst code
 
+let rec compile_data et = match (fst et) with
+  | I.ELit x -> x
+  | I.EColl(Ast.CList, elts) -> compile_data_list elts
+  | I.EColl(Ast.CSet,  elts) -> compile_data_set  elts
+  | I.EColl(Ast.CMap,  elts) -> compile_data_map elts
+  | I.EProduct elts -> compile_data_product elts
+  | I.ESum(i, n, te) -> compile_data_sum i n te
+  | I.ELambda _ -> not_impl "lambda in data"
+  | I.EId _ -> unsound "No variables in data"
+  | I.ELet _ | I.EApp _ | I.EProductGet _ | I.EProductSet _ 
+  | I.EStoreSet _ | I.ESumCase _ -> unsound "Not allowed in data"
+
+and compile_data_list = function
+  | [] -> "Nil"
+  | a :: b -> sprintf "(Cons %s %s)" (compile_data a) (compile_data_list b)
+
+and compile_data_set elts =
+  "(Set "^sep_list " " compile_data elts^")"
+
+and compile_data_map elts =
+  let rec pairs = function [] -> [] 
+    | [_] -> unsound "odd number of elements in map"
+    | a::b::c -> sprintf "(Item %s %s)" (compile_data a) (compile_data b) :: pairs c in
+  sprintf "(Map %s)" (String.concat " " (pairs elts))
+
+and compile_data_product elts = 
+  Compile_composite.product_data (List.map compile_data elts)
+
+and compile_data_sum i n e =
+  Compile_composite.sum_data i n (compile_data e)
+
+let compile_data_init dd t_user_store =
+()
+
 let compile_contract t_user_store expr = 
   match expr with
   | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
@@ -305,6 +360,7 @@ let compile_contract t_user_store expr =
     let stk = [(Some v_param, t_param); (Some "@", t_user_store)] in
     let stk, code = compile_typed_expr stk body in
 
+    (* TODO simplify storage if there is no contract-call *)
     let t_compiler_store, _ = Stk_S.get_all() in
     let t_stores = I.TProduct(None, lazy [t_compiler_store; t_user_store]) in
 

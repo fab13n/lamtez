@@ -67,9 +67,19 @@ let type_ make_node make_leaf fields =
  * out of a list of basic Michelson types. For instance
  * `sum_type ["A"; "B"; "C"; "D"]` generates `"(or (or A B) (or C D))"` 
  *)
-let sum_type, product_type = 
+let sum_type, 
+    product_type,
+    product_data = 
   let make_node = sprintf "(%s %s %s)" and make_leaf x = x in
-  type_ (make_node "or") make_leaf, type_ (make_node "pair") make_leaf
+  type_ (make_node "or") make_leaf, 
+  type_ (make_node "pair") make_leaf,
+  type_ (make_node "Pair") make_leaf
+
+let sum_data i n e =
+  let path = List.nth (paths n) i in
+  let rec fold b e = sprintf "(%s %s)" (if b then "Right" else "Left") e in
+  List.fold_right fold path e
+
 
 (* Returns the sequence of LEFT/RIGHT operators which will turn the top-of-stack
  * into the `i`th alternative out of `n`.

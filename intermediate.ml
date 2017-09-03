@@ -20,13 +20,16 @@ type etype =
 
 type evar = string
 
+type collection_kind = Ast.collection_kind
+
 type typed_expr = expr * etype
 
 and expr =
 | ELit of string
+| EColl of collection_kind * typed_expr list
 | EId of evar
 | ELambda of (evar * etype) list * typed_expr
-| ELetIn of (evar * typed_expr * typed_expr)
+| ELet of (evar * typed_expr * typed_expr)
 | EApp of typed_expr * typed_expr list
 | EProduct of typed_expr list
 | ESum of int * int * typed_expr

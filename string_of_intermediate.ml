@@ -27,14 +27,17 @@ let rec string_of_etype =
   | TSum(_, lazy []) -> "(+)"
   | TSum(_, lazy list) -> "("^sep_list " + " t list^")"
 
+let string_of_collection_kind = String_of_ast.string_of_collection_kind
+
 let rec string_of_expr =
   let t = string_of_etype in
   let et = string_of_typed_expr in
   function
   | ELit s | EId s -> s
+  | EColl(k, list) -> "("^string_of_collection_kind k^" "^sep_list " " et list^")"
   | ELambda(params, body) ->
     "(\\"^sep_list " " (fun (v, vt) -> "["^v^":"^t vt^"]") params^" -> "^et body^")"
-  | ELetIn(v, e0, e1) -> "let "^v^" = "^et e0^" in "^et e1
+  | ELet(v, e0, e1) -> "let "^v^" = "^et e0^" in "^et e1
   | EApp(f, args) -> "("^sep_list " " et (f::args)^")"
   | EProduct x  -> "("^sep_list ", " et x^")"
   | ESum (i, n, x) -> sprintf "<%d|%d> %s" i n (et x)
@@ -51,9 +54,10 @@ let rec string_of_untyped_expr e =
   let r (e, t) = string_of_untyped_expr e in
   match e with
   | ELit s | EId s -> s
+  | EColl(k, list) -> "("^string_of_collection_kind k^" "^sep_list " " r list^")"
   | ELambda(params, body) ->
     "\\"^sep_list " " fst params^" -> "^r body
-  | ELetIn(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
+  | ELet(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
   | EApp(f, args) -> "("^sep_list " " r (f::args)^")"
   | EProduct x  -> "("^sep_list ", " r x^")"
   | ESum (i, n, x) -> sprintf "<%d|%d>%s" i n (r x)

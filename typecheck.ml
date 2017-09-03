@@ -16,13 +16,18 @@ let rec typecheck_expr ctx expr =
     incr debug_indent
   end;
 
-  let ctx, t = try match expr with
-  | A.ENat(_, n)  -> ctx, A.tprim0 "nat"
-  | A.EInt(_, n)  -> ctx, A.tprim0 "int"
-  | A.EString _   -> ctx, A.tprim0 "string"
-  | A.ETez _      -> ctx, A.tprim0 "tez"
-  | A.ESig _      -> ctx, A.tprim0 "sig"
-  | A.ETime _     -> ctx, A.tprim0 "time"
+  let ctx, t = match expr with
+  | A.ELit(_, c) -> begin match c with
+    | A.LNat _    -> ctx, A.tprim0 "nat"
+    | A.LInt _    -> ctx, A.tprim0 "int"
+    | A.LString _ -> ctx, A.tprim0 "string"
+    | A.LTez _    -> ctx, A.tprim0 "tez"
+    | A.LSig _    -> ctx, A.tprim0 "sig"
+    | A.LTime _   -> ctx, A.tprim0 "time"
+    end
+  | A.EColl(_, A.CList, list) -> typecheck_EColl_CList ctx list
+  | A.EColl(_, A.CMap,  list) -> typecheck_EColl_CMap  ctx list
+  | A.EColl(_, A.CSet,  list) -> typecheck_EColl_CSet  ctx list
   | A.EId(_, id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
     ctx, Ctx.instantiate_scheme (scheme)
@@ -40,10 +45,6 @@ let rec typecheck_expr ctx expr =
   | A.ESumCase(_, e, cases) -> typecheck_ESumCase ctx e cases
   | A.EBinOp(loc, a, op, b) -> typecheck_EBinOp ctx loc a op b
   | A.EUnOp(_, op, a) -> typecheck_EUnOp ctx op a
-  with
-  | Typing(loc,msg) ->
-    print_endline ("\n"^A.string_of_loc loc^": "^msg);
-    raise Exit
   in
   let t = Ctx.expand_type ctx t in
   let ctx = Ctx.save_type expr t ctx in
@@ -52,6 +53,17 @@ let rec typecheck_expr ctx expr =
     print_endline (String.make (2 * !debug_indent) ' '^"Result: val "^P.string_of_expr expr^": "^P.string_of_type t);
   end;
   ctx, t
+
+and typecheck_EColl_CList ctx elts =
+  let ctx, types = list_fold_map typecheck_expr ctx elts in 
+  ctx, A.TApp(A.noloc, "list", types)
+
+and typecheck_EColl_CMap ctx elts =
+  not_impl ""
+
+and typecheck_EColl_CSet ctx elts =
+  let ctx, types = list_fold_map typecheck_expr ctx elts in 
+  ctx, A.TApp(A.noloc, "set", types)
 
 and typecheck_ELambda ctx id scheme e =
   if fst scheme <> [] then unsupported "parametric parameter types";
@@ -210,8 +222,8 @@ and typecheck_EBinOp ctx loc a op b =
     | A.TId(_, id0), A.TId(_, id1) ->
       type_error loc ("Need more annotations to determine substraction type.")
       (* let ctx, _ = Ctx.unify ctx ta (p "int") in
-         let ctx, _ = Ctx.unify ctx tb (p "int") in *)
-      ctx, p "int"
+         let ctx, _ = Ctx.unify ctx tb (p "int") in
+         ctx, p "int" *)
     | _ -> error "substract"
     end
 
@@ -327,8 +339,12 @@ let typecheck_decl ctx = function
   | A.DProduct(_, var, params, cases) -> Ctx.add_product var params cases ctx
   | A.DSum(_, var, params, cases) -> Ctx.add_sum var params cases ctx
 
-let typecheck_store (ctx, fields) (tag, t) =
+let typecheck_store_init ctx e = not_impl ""
+(* TODO verifier qu''il n'y a pas de variable ou autre construction interdite. *)
+
+let typecheck_store (ctx, fields) (tag, t, v) =
   if List.mem_assoc tag fields then unsound("Storage field "^tag^" redefined");
+  (match v with None -> () | Some e -> typecheck_store_init ctx e);
   (ctx, (tag, t)::fields)
 
 let typecheck_contract ctx (declarations, storage_fields, code) =
@@ -346,5 +362,22 @@ let typecheck_contract ctx (declarations, storage_fields, code) =
   let ctx, t = typecheck_expr ctx code in
   let param = A.fresh_tvar ~prefix:"param" () in
   let result = A.fresh_tvar ~prefix:"result" () in
-  let ctx, t =  Ctx.unify ctx t (A.tlambda [param; result]) in
-  ctx, Ctx.expand_type ctx (A.TId(A.noloc, "@")), t
+  let ctx, t_code =  Ctx.unify ctx t (A.tlambda [param; result]) in
+  let t_store = Ctx.expand_type ctx (A.TId(A.noloc, "@")) in
+
+  (* Check for unresolved polymorphism. *)
+  (* TODO reassociate TId with their EId. reverse lookup in ctx? *)
+  let f_code = A.get_free_tvars t_code in
+  if f_code <> [] then type_error 
+      (A.loc_of_expr code) 
+      ("Unresolved types "^String.concat ", " f_code^
+       " in code type: "^P.string_of_type t_code^"; add type annotations.");
+  let f_store = A.get_free_tvars t_store in
+  if f_store <> [] then type_error 
+      (A.loc_of_expr code) 
+      ("Unresolved types "^String.concat ", " f_store^
+       " in storage type: "^P.string_of_type t_code^"; add type annotations.");
+
+  (* TODO migrate contract-call and EStoreSet checks here. *)
+
+  ctx, t_store, t_code

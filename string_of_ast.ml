@@ -28,9 +28,6 @@ let string_of_type_decl d =
   in
   left^" = "^right
 
-let string_of_store_decl (tag, t) =
-  "@"^(String.uncapitalize_ascii tag)^": "^string_of_type t
-
 let string_of_scheme (vars, t) =
   if vars=[] then string_of_type t
   else "∀ "^sep_list " " (fun x->x) vars^": "^string_of_type t
@@ -42,15 +39,23 @@ let string_of_binop = function
 
 let string_of_unop = function UAbs -> "abs" | UNeg -> "-" | UNot -> "!"
 
+let rec string_of_lit = function
+  | LString(_, s) -> "\""^s^"\""
+  | LNat(_, n) -> string_of_int n
+  | LInt(_, n) -> (if n<=0 then "+" else "")^string_of_int n
+  | LTez(_, n) -> Printf.sprintf "tz%d.%02d" (n/100) (n mod 100)
+  | LTime(_, s) -> s
+  | LSig(_, s) -> "sig:"^s
+
+let string_of_collection_kind = function
+  | CSet -> "set" | CList -> "list" | CMap -> "map" 
+
 let rec string_of_expr e =
   let soe = string_of_expr in
   match e with
-  | EString(_, s) -> "\""^s^"\""
-  | ENat(_, n) -> string_of_int n
-  | EInt(_, n) -> (if n<=0 then "+" else "")^string_of_int n
-  | ETez(_, n) -> Printf.sprintf "TZ%d.%02d" (n/100) (n mod 100)
-  | ETime(_, s) -> s
-  | ESig(_, s) -> "sig:"^s
+  | ELit(_, c) -> string_of_lit c
+  | EColl(_, kind, list) ->
+    "("^string_of_collection_kind kind^" "^sep_list " " soe list^")"
   | EId(_, s) -> s
   | ELambda _ ->
     let rec f = function
@@ -70,6 +75,11 @@ let rec string_of_expr e =
   | EBinOp(_, e0, op, e1) -> "("^soe e0^" "^string_of_binop op^" "^soe e1^")"
   | EUnOp(_, op, e0) -> string_of_unop op^soe e0
   | ETypeAnnot(_, e0, t) -> "("^soe e0^": "^string_of_type t^")"
+
+let string_of_store_decl (tag, t, v) =
+  let d = "@"^(String.uncapitalize_ascii tag)^" :: "^string_of_type t in
+  match v with None -> d^";" 
+  | Some v -> d^" = "^string_of_expr v
 
 let string_of_contract (d, s, e) =
   sep_list "\n" string_of_type_decl d ^ "\n" ^

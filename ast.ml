@@ -26,14 +26,19 @@ type binOp =
 
 type unOp = UNot | UNeg | UAbs
 
-type expr =
-  | ENat    of loc * int
-  | EInt    of loc * int
-  | EString of loc * string
-  | ETez    of loc * int
-  | ETime   of loc * string
-  | ESig    of loc * string
+type literal =
+  | LNat    of loc * int
+  | LInt    of loc * int
+  | LString of loc * string
+  | LTez    of loc * int
+  | LTime   of loc * string
+  | LSig    of loc * string
 
+type collection_kind = CSet | CMap | CList
+
+type expr =
+  | ELit    of loc * literal
+  | EColl   of loc * collection_kind * expr list
   | EId     of loc * evar
   | ELambda of loc * evar * scheme * expr
   | ELet    of loc * evar * etype * expr * expr (* TODO type should be a scheme for consistency *)
@@ -55,7 +60,7 @@ type expr =
 
   | ETypeAnnot of loc * expr * etype
 
-type contract = decl list * (tag * etype) list * expr
+type contract = decl list * (tag * etype * expr option) list * expr
 
 let string_of_loc: loc -> string = function
   | None -> "?"
@@ -70,8 +75,7 @@ let string_of_loc: loc -> string = function
               p1.pos_fname p1.pos_lnum p2.pos_lnum p1.pos_cnum p2.pos_cnum
 
 let loc_of_expr = function
-| ENat(loc, _) | EInt(loc, _) | EString(loc, _) | ETez(loc, _) | ETime(loc, _)
-| ESig(loc, _) | EId(loc, _) | ELambda(loc, _, _, _) | ELet(loc, _, _, _, _)
+| ELit(loc, _) | EColl(loc, _, _)| EId(loc, _) | ELambda(loc, _, _, _) | ELet(loc, _, _, _, _)
 | EApp(loc, _, _) | ETuple(loc, _) | ETupleGet(loc, _, _) | EProduct(loc, _)
 | EProductGet(loc, _, _) | EProductSet(loc, _, _, _) | EStoreSet(loc, _, _, _)
 | ESum(loc, _, _) | ESumCase(loc, _, _) | EBinOp(loc, _, _, _) | EUnOp(loc, _, _)
@@ -81,7 +85,7 @@ let loc_of_etype = function
 | TId(loc, _) | TLambda(loc, _, _) | TTuple(loc, _) | TApp(loc, _, _) -> loc
 | TFail -> noloc
 
-let loc_of_dec = function
+let loc_of_decl = function
 | DProduct(loc, _, _, _) | DSum(loc, _, _, _)
 | DAlias(loc, _, _, _) | DPrim(loc, _, _) -> loc
 
@@ -98,20 +102,32 @@ let fresh_var =
     incr fresh_var_counter;
     prefix ^ "%" ^ string_of_int !fresh_var_counter
 
-let fresh_tvar ?prefix:(prefix="_") () = TId(noloc, fresh_var())
-let fresh_evar ?prefix:(prefix="_") () = EId(noloc, fresh_var())
+let fresh_tvar ?prefix:(prefix="") () = TId(noloc, fresh_var ~prefix ())
+let fresh_evar ?prefix:(prefix="") () = EId(noloc, fresh_var ~prefix ())
 
 let fresh_vars, fresh_tvars, fresh_evars =
   let rec f g acc = function 0 -> acc | n -> f g (g()::acc) (n-1) in
-  let repeat (type a) (g:?prefix:string -> unit -> a) ?prefix:(prefix="_") n =
+  let repeat (type a) (g:?prefix:string -> unit -> a) ?prefix:(prefix="") n =
     List.rev (f (g ~prefix) [] n) in
   repeat fresh_var, repeat fresh_tvar, repeat fresh_evar
+
+let get_free_tvars t =
+  let module S = Set.Make(String) in
+  let rec f = function
+    | TFail -> S.empty
+    | TId(_, id) -> S.singleton id
+    | TLambda(_, e0, e1) -> S.union (f e0) (f e1)
+    | TTuple(_, list) 
+    | TApp(_, _, list) -> 
+      List.fold_left S.union S.empty (List.map f list) in
+  S.elements (f t)
 
 let rec replace_evar var e e' =
   let r = replace_evar var e in
   match e' with
   | EId(_, var') when var'=var -> e
-  | EString _ | ENat _| EInt _| ETez _ | ETime _ | ESig _ | EId _ -> e'
+  | ELit _ | EId _ -> e'
+  | EColl(loc, kind, list) -> EColl(loc, kind, List.map r list)
   | ELambda(_, var', _, _) when var'==var -> e'
   | ELambda(loc, var', t, e0) -> ELambda(loc, var', t, r e0)
   | ELet(loc, var', t, e0, e1) when var=var' -> ELet(loc, var', t, r e0, e1)
