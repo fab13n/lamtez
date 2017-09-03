@@ -41,4 +41,7 @@ and expr =
 
 type store = (int * etype) list
 
-type contract = store * expr
+type contract = {
+  storage_type: etype;
+  storage_init: typed_expr option;
+  code:         typed_expr }

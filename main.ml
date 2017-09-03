@@ -70,36 +70,59 @@ let parse_file a =
       raise Exit
     | Parser.Error as e -> 
       print_endline("parsing: error at K."^string_of_int (Lexing.lexeme_start a.input));
-      raise e
+      raise Exit
+    | Not_impl msg ->
+      print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+      Printexc.print_backtrace stdout;
+      raise Exit
   in
   if does_typecheck a then
     log "Typechecking";
     let ctx = Standard_ctx.ctx in
-    let ctx, t_store, t_code = 
+    let typed_contract = 
       try Typecheck.typecheck_contract ctx ast with
       | Typing(loc, msg) ->
         print_endline ("\n"^Ast.string_of_loc loc^": "^msg);
         raise Exit
+      | Not_impl msg ->
+        print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+        Printexc.print_backtrace stdout;
+        raise Exit
     in
-    log ("Typechecked succesfully. resulting type = "^String_of_ast.string_of_type t_code);
+    let ctx = typed_contract.Typecheck.ctx in
+    log ("Typechecked succesfully. code :: "^
+         String_of_ast.string_of_type typed_contract.Typecheck.param_type^" -> "^
+         String_of_ast.string_of_type typed_contract.Typecheck.result_type^"; storage :: "^
+         String_of_ast.string_of_type typed_contract.Typecheck.storage_type
+         );
 
     if does_intermediate a then
       log "Intermediate tree";
-      let interm = Intermediate_of_ast.compile_expr ctx ast_code in
-      print_endline ("Intermediate tree:\n"^String_of_intermediate.string_of_untyped_expr (fst interm));
+      let int_contract = Intermediate_of_ast.compile_contract typed_contract in
+      let int_code = int_contract.Intermediate.code in
+       print_endline ("Intermediate tree:\n"^String_of_intermediate.string_of_untyped_expr (fst int_code));
       (* print_endline ("\nIntermediate tree:\n"^String_of_intermediate.string_of_typed_expr interm); *)
 
       if does_compile a then
         log "Compiling";
-        let t_store = Intermediate_of_ast.compile_etype ctx t_store in
-        let code = Michelson_of_intermediate.compile_contract t_store interm in
-        output_string a.output code;
-        log ("Contract written to "^a.out_name);
-        if does_data a then
-          let data_name = match a.data with Some x -> x | None -> assert false in
-          let data_file = open_out data_name in
-          log("Initialization data written to "^data_name);
-          not_impl "init data writing"
+        try
+          let code, storage_init = Michelson_of_intermediate.compile_contract int_contract in
+          output_string a.output code;
+          if a.out_name<>"stdout" then close_out a.output;
+          log ("Contract written to "^a.out_name);
+          if does_data a then
+            match storage_init with
+            | None -> failwith ("Missing init values in "^a.in_name)
+            | Some init_code ->
+              let data_name = match a.data with Some x -> x | None -> assert false in
+              let data_file = open_out data_name in
+              output_string data_file (init_code^"\n");
+              close_out data_file;
+              log("Initialization data written to "^data_name);
+      with Not_impl msg ->
+        print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+        Printexc.print_backtrace stdout;
+        raise Exit
 
 
 let main () =

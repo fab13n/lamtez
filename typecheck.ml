@@ -5,6 +5,14 @@ module P = String_of_ast
 
 module StringSet = Set.Make(String)
 
+type typed_contract = {
+  ctx:          Ctx.t;
+  storage_type: A.etype;
+  param_type:   A.etype;
+  result_type:  A.etype;
+  storage_init: A.expr option;
+  code:         A.expr }
+
 let _DEBUG_ = true
 let debug_indent = ref 0
 
@@ -18,12 +26,12 @@ let rec typecheck_expr ctx expr =
 
   let ctx, t = match expr with
   | A.ELit(_, c) -> begin match c with
-    | A.LNat _    -> ctx, A.tprim0 "nat"
-    | A.LInt _    -> ctx, A.tprim0 "int"
-    | A.LString _ -> ctx, A.tprim0 "string"
-    | A.LTez _    -> ctx, A.tprim0 "tez"
-    | A.LSig _    -> ctx, A.tprim0 "sig"
-    | A.LTime _   -> ctx, A.tprim0 "time"
+    | A.LNat _    -> ctx, A.tprim "nat"
+    | A.LInt _    -> ctx, A.tprim "int"
+    | A.LString _ -> ctx, A.tprim "string"
+    | A.LTez _    -> ctx, A.tprim "tez"
+    | A.LSig _    -> ctx, A.tprim "sig"
+    | A.LTime _   -> ctx, A.tprim "time"
     end
   | A.EColl(_, A.CList, list) -> typecheck_EColl_CList ctx list
   | A.EColl(_, A.CMap,  list) -> typecheck_EColl_CMap  ctx list
@@ -59,7 +67,7 @@ and typecheck_EColl_CList ctx elts =
   ctx, A.TApp(A.noloc, "list", types)
 
 and typecheck_EColl_CMap ctx elts =
-  not_impl ""
+  not_impl "EColl_CMap"
 
 and typecheck_EColl_CSet ctx elts =
   let ctx, types = list_fold_map typecheck_expr ctx elts in 
@@ -339,14 +347,64 @@ let typecheck_decl ctx = function
   | A.DProduct(_, var, params, cases) -> Ctx.add_product var params cases ctx
   | A.DSum(_, var, params, cases) -> Ctx.add_sum var params cases ctx
 
-let typecheck_store_init ctx e = not_impl ""
-(* TODO verifier qu''il n'y a pas de variable ou autre construction interdite. *)
-
-let typecheck_store (ctx, fields) (tag, t, v) =
+let typecheck_store (ctx, fields, inits) (tag, etype, init) =
   if List.mem_assoc tag fields then unsound("Storage field "^tag^" redefined");
-  (match v with None -> () | Some e -> typecheck_store_init ctx e);
-  (ctx, (tag, t)::fields)
+  let ctx, inits = match inits, init with
+  | None, _ | _, None -> ctx, None
+  | Some inits, Some init ->
+    let ctx, t_init = typecheck_expr ctx init in
+    let ctx, _ = Ctx.unify ctx etype t_init in
+    ctx, Some ((tag, init)::inits)
+  in
+  (ctx, (tag, etype)::fields, inits)
 
+let check_contract_calls expr = 
+  let rec forbidden list where =
+    if List.exists f list
+    then unsupported ("Contract calls forbidden in "^where)
+    else false
+  and f = function
+  | A.ELit _ | A.EId _ -> false
+  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _)       -> f e
+  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
+  | A.EColl(_, _, list)                   -> forbidden list "collections"
+  | A.ELambda(_, "call-contract", _, _)   -> false
+  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] "stored field updates"
+  | A.ETuple(_, list)                     -> forbidden list "tuples"
+  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
+  | A.ETupleGet(_, e, _)                  -> f e
+  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
+  in let _ = f expr in
+  ()
+
+let check_store_set expr =
+  let rec forbidden list where =
+    if List.exists f list
+    then unsupported ("Storage updates forbidden in "^where)
+    else false
+  and f = function
+  | A.ELit _ | A.EId _ -> false
+  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
+  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> f e) list
+  | A.EColl(_, _, list)                   -> forbidden list "collections"
+  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
+  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
+  | A.ETuple(_, list)                     -> forbidden list "tuples"
+  | A.ETupleGet(_, e, _)                  -> f e
+  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
+  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
+  in let _ = f expr in
+  ()
+  
 let typecheck_contract ctx (declarations, storage_fields, code) =
   (* TODO is the arity of A.TApp() type properly checked? *)
 
@@ -354,16 +412,28 @@ let typecheck_contract ctx (declarations, storage_fields, code) =
   let ctx = List.fold_left typecheck_decl ctx declarations in
 
   (* Turn store declarations into a sum declaration and product. *)
-  let ctx, store_fields = List.fold_left typecheck_store (ctx, []) storage_fields in
+  let ctx, store_fields, init_fields = List.fold_left typecheck_store (ctx, [], Some []) storage_fields in
   let ctx = Ctx.add_product "@" [] store_fields ctx in
-  let ctx = Ctx.add_evar "@" ([], A.TApp(A.noloc, "@", [])) ctx in
+  let ctx = Ctx.add_evar "@" ([], A.tprim "@") ctx in
+  let ctx, storage_init = match init_fields with None -> ctx, None | Some fields -> 
+    (* The expression must be typechecked, in order to be registered for Ctx.retrive_type. *)
+    let e = A.EProduct(A.noloc, fields) in
+    let ctx, _ = typecheck_expr ctx e in
+    ctx, Some e
+  in
 
   (* Compile the code itself *)
   let ctx, t = typecheck_expr ctx code in
-  let param = A.fresh_tvar ~prefix:"param" () in
-  let result = A.fresh_tvar ~prefix:"result" () in
-  let ctx, t_code =  Ctx.unify ctx t (A.tlambda [param; result]) in
-  let t_store = Ctx.expand_type ctx (A.TId(A.noloc, "@")) in
+  let t_param = A.fresh_tvar ~prefix:"param" () in
+  let t_result = A.fresh_tvar ~prefix:"result" () in
+  let ctx, t_code =  Ctx.unify ctx t (A.tlambda [t_param; t_result]) in
+  let t_store = Ctx.expand_type ctx (A.tid "@") in
+  let ctx = Ctx.add_evar "@" ([], A.TApp(A.noloc, "@", [])) ctx in
+
+  begin match code with
+    | A.ELambda(_, _, _, body) -> check_contract_calls body; check_store_set body;
+    | _ -> unsupported "Contract code must be a litteral lambda"
+  end;
 
   (* Check for unresolved polymorphism. *)
   (* TODO reassociate TId with their EId. reverse lookup in ctx? *)
@@ -378,6 +448,13 @@ let typecheck_contract ctx (declarations, storage_fields, code) =
       ("Unresolved types "^String.concat ", " f_store^
        " in storage type: "^P.string_of_type t_code^"; add type annotations.");
 
-  (* TODO migrate contract-call and EStoreSet checks here. *)
 
-  ctx, t_store, t_code
+  let t_param, t_result = match t_code with A.TLambda(_, a, b) -> a, b | _ -> assert false in
+
+  (* TODO migrate contract-call and EStoreSet checks here. *)
+  { ctx          = ctx; 
+    storage_type = t_store; 
+    param_type   = t_param; 
+    result_type  = t_result; 
+    storage_init = storage_init;
+    code         = code }

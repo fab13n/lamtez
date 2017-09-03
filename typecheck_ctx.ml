@@ -97,9 +97,10 @@ let add_composite names_map tags_map aliases_map name type_params cases ctx =
   check_fresh_name ctx name;
   check_fresh_tag ctx.sum_tags cases;
   check_fresh_tag ctx.product_tags cases;
-  ( (if type_params<>[] then aliases_map else StringMap.add name ([], A.TApp(A.noloc, name, [])) aliases_map),
-    StringMap.add name {type_params; cases} names_map,
-    List.fold_left (fun tags_map (tag, _) -> StringMap.add tag name tags_map) tags_map cases)
+  let aliases = if type_params<>[] then aliases_map else StringMap.add name ([], A.tapp name []) aliases_map in
+  let names_map = StringMap.add name {type_params; cases} names_map in
+  let tags_map = List.fold_left (fun tags_map (tag, _) -> StringMap.add tag name tags_map) tags_map cases in
+  aliases, names_map, tags_map
 
 let add_sum name type_params cases ctx =
   let aliases, sums, sum_tags =
@@ -166,7 +167,9 @@ and scheme_of_evar ctx name =
 let save_type e t ctx =
   {ctx with types_assoc = ExprMap.add e t ctx.types_assoc}
 
-let retrieve_type ctx e = ExprMap.find e ctx.types_assoc
+let retrieve_type ctx e = 
+  try ExprMap.find e ctx.types_assoc
+  with Not_found -> failwith ("This expression was never typechecked: "^String_of_ast.string_of_expr e)
 
 (* Combo of a fold_left2 with a map2: the function f returns both
  * an accumulator and a transformed list element.
@@ -181,7 +184,8 @@ let list_fold_map2 f acc a_list b_list =
   acc, List.rev rev_c_list
 
 let rec unify ctx t0 t1 =
-  (* TODO: have a direction, to choose a prefered model for the result and report loc *)
+  (* TODO: have a direction, to choose a prefered model for the result and report loc
+   * and differenciate nat <: int from int <: nat *)
   (* TODO: add awareness of nat <: int *)
   let t0 = expand_type ctx t0 in
   let t1 = expand_type ctx t1 in

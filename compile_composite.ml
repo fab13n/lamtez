@@ -84,7 +84,7 @@ let sum_data i n e =
 (* Returns the sequence of LEFT/RIGHT operators which will turn the top-of-stack
  * into the `i`th alternative out of `n`.
  * For instance 
- * `sum_ ["A"; "B"; "C"; "D"]` generates `"(or (or A B) (or C D))"` 
+ * `sum_make ["A"; "B"; "C"; "D"]` generates `"(or (or A B) (or C D))"` 
  *)
 let sum_make i types =
 

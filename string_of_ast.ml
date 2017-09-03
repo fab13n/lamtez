@@ -8,9 +8,9 @@ let rec string_of_type t =
   | TFail -> "fail"
   | TLambda(_) as t ->
       let rec f = function TLambda(_, a, b) -> sot a^" -> "^f b | t -> sot t in "("^f t^")"
-  | TTuple(_, list) -> "("^sep_list " * " sot list^")"
+  | TTuple(_, list) -> "("^sep_list " * " sot list^")"    
   | TApp(_, name, []) -> "'"^name
-  | TApp(_, name, args) -> "("^name^" "^sep_list " " sot args^")"
+  | TApp(_, name, args) -> "('"^name^" "^sep_list " " sot args^")"
 
 let string_of_decl_pair (tag, t) = tag^": "^string_of_type t
 

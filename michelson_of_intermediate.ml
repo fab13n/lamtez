@@ -58,6 +58,7 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     let stk = match stk with r :: v :: stk -> r :: stk | _ -> unsound "stack too shallow" in
     stk, c0^"# let "^v^" = ... in ...\n"^c1^"DIP { DROP } # remove "^v^"\n"
   | I.EApp(f, args) -> compile_EApp stk f args it
+  | I.EProduct [] -> (None, I.TProduct(Some("unit", []), lazy []))::stk, "UNIT"
   | I.EProduct fields ->
     let stk', code = List.fold_left
       (fun (stk, code) field -> let stk, code' = compile_typed_expr stk field in stk, code^code')
@@ -88,7 +89,7 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
 and compile_primitive stk name args t_result =
 
   let simple_primitives = [
-    "now", "NOW"; "unit", "UNIT"; "fail", "FAIL";
+    "self-now", "NOW"; "fail", "FAIL";
     "contract-create", "CREATE_CONTRACT"; "contract-create-account", "CREATE_ACCOUNT"; "contract-get", "DEFAULT_ACCOUNT"; "contract-manager", "MANAGER";
     "self-amount", "AMOUNT"; "self-contract", "SELF"; "self-balance", "BALANCE"; "self-steps-to-quota", "STEPS_TO_QUOTA";
     "crypto-hash", "H";
@@ -161,11 +162,11 @@ and compile_EColl_CList stk list t_list =
 
 and compile_EColl_CMap stk list t_map = 
   let t_k, t_v = match t_map with I.TPrim("list", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
-  not_impl ""
+  not_impl "EColl_CMap"
 
 and compile_EColl_CSet stk list t_set = 
   let t_elt = match t_set with I.TPrim("set", [t_elt]) -> t_elt | _ -> assert false in
-  not_impl ""
+  not_impl "EColl_CSet"
 
 and compile_ELambda stk params body it_lambda =
   match params, body with
@@ -318,13 +319,16 @@ let patch_stack_store_operations code =
     )
   in Str.global_substitute re subst code
 
-let rec compile_data et = match (fst et) with
+let rec compile_data et = 
+  (* print_endline("Data = "^String_of_intermediate.string_of_typed_expr et); *)
+  match (fst et) with
   | I.ELit x -> x
   | I.EColl(Ast.CList, elts) -> compile_data_list elts
   | I.EColl(Ast.CSet,  elts) -> compile_data_set  elts
   | I.EColl(Ast.CMap,  elts) -> compile_data_map elts
+  | I.EProduct [] -> "Unit"
   | I.EProduct elts -> compile_data_product elts
-  | I.ESum(i, n, te) -> compile_data_sum i n te
+  | I.ESum(i, n, content) -> compile_data_sum i n content (snd et)
   | I.ELambda _ -> not_impl "lambda in data"
   | I.EId _ -> unsound "No variables in data"
   | I.ELet _ | I.EApp _ | I.EProductGet _ | I.EProductSet _ 
@@ -343,28 +347,27 @@ and compile_data_map elts =
     | a::b::c -> sprintf "(Item %s %s)" (compile_data a) (compile_data b) :: pairs c in
   sprintf "(Map %s)" (String.concat " " (pairs elts))
 
-and compile_data_product elts = 
+and compile_data_product elts =
   Compile_composite.product_data (List.map compile_data elts)
 
-and compile_data_sum i n e =
-  Compile_composite.sum_data i n (compile_data e)
+and compile_data_sum i n e t_sum = match i, t_sum with
+  | 0, I.TSum(Some("bool", []), _) -> "False"
+  | 1, I.TSum(Some("bool", []), _) -> "True"
+  | 0, I.TSum(Some("option", [_]), _) -> "None"
+  | 1, I.TSum(Some("option", [_]), _) -> "(Some "^compile_data e^")"
+  | _ -> Compile_composite.sum_data i n (compile_data e)
 
-let compile_data_init dd t_user_store =
-()
-
-let compile_contract t_user_store expr = 
-  match expr with
+let compile_contract i_contract = 
+  match i_contract.I.code with
   | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
     Stk_S.reset();
 
-    let stk = [(Some v_param, t_param); (Some "@", t_user_store)] in
+    let stk = [(Some v_param, t_param); (Some "@", i_contract.I.storage_type)] in
     let stk, code = compile_typed_expr stk body in
 
     (* TODO simplify storage if there is no contract-call *)
-    let t_compiler_store, _ = Stk_S.get_all() in
-    let t_stores = I.TProduct(None, lazy [t_compiler_store; t_user_store]) in
-
-    print_endline("Store type: "^String_of_intermediate.string_of_etype t_user_store);
+    let t_compiler_store, saved_stacks = Stk_S.get_all() in
+    let t_stores = I.TProduct(None, lazy [t_compiler_store; i_contract.I.storage_type]) in
 
     (* Piece everything together*)
     let code =
@@ -381,9 +384,16 @@ let compile_contract t_user_store expr =
       sprintf "}\n"
     in
 
+    let init_data = match i_contract.I.storage_init with None -> None | Some et_user_store ->
+      (* Actual storage is the product of stack saving store and user-defined store. *)
+      let et_unit = I.EProduct[], I.TProduct(Some("unit", []), lazy []) in
+      let et_compiler_store = I.ESum(0, List.length saved_stacks, et_unit), t_compiler_store in
+      let et_stores = I.EProduct[et_compiler_store; et_user_store], t_stores in
+      Some (compile_data et_stores) in
+
     let code = patch_stack_store_operations code in
     let code = Code_format.indent '{' '}' code in
-    code
+    code, init_data
 
   | _ -> unsound "Bad contract type"
 

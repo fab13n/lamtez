@@ -2,29 +2,7 @@
 open Utils
 open Ast
 
-let noloc = None
 let loc startpos endpos = Some(startpos, endpos)
-let loc2 a b = match a, b with
-  | Some(a, _), Some(_, b) | Some(a, b), None | None, Some(a, b) -> Some(a, b)
-  | None, None -> None
-let loc2e a b = loc2 (loc_of_expr a) (loc_of_expr b)
-
-let eid id = EId(noloc, id)
-let esum id args =
-  let loc, arg = match args with
-  | [] -> noloc, eid "unit"
-  | [e] -> loc_of_expr e, e
-  | list ->
-    let loc = loc2e (List.hd list) (List.hd (List.rev list)) in
-    loc, ETuple(loc, list) in
-  ESum(loc, id, arg) 
-
-let eapp = function [] -> assert false | f :: args ->
-  let l1 = loc_of_expr f in
-  let fold acc arg =
-    let loc = loc2 l1 (loc_of_expr arg) in
-    EApp(loc, acc, arg) in
-  List.fold_left fold f args
 
 (* Parse applications: either set/map/list magic functions,
  * or a regular nesting of curryfied applications. *)
@@ -100,15 +78,15 @@ atomic_constant:
 | n=TEZ {LTez(loc $startpos $endpos, n)}
 | n=TIMESTAMP {LTime(loc $startpos $endpos, n)}
 | s=SIGNATURE {LSig(loc $startpos $endpos, s)}
-| s=STRING {LString(loc $startpos $endpos, s)} (* TODO Unescape *)
+| s=STRING {LString(loc $startpos $endpos, s)} (* TODO Handle "\\\"" *)
 (* TODO support crypto keys *)
 
 data:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | LAMBDA p=parameter+ COLON e=expr {not_impl "lambda data"}
-| LPAREN p=separated_list(COMMA, data) RPAREN {match p with [] -> not_impl "unit data" | [e] -> e | p -> ETuple(loc $startpos $endpos, p)}
+| LPAREN p=separated_list(COMMA, data) RPAREN {etuple ~loc:(loc $startpos $endpos) p}
 | LBRACE p=separated_list(COMMA, data_product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
-| tag=TAG e=data? {match e with Some e -> ESum(loc $startpos $endpos, tag, e) | None -> ESum(loc $startpos $endpos, tag, not_impl "data unit")}
+| tag=TAG e=data? {match e with Some e -> ESum(loc $startpos $endpos, tag, e) | None -> ESum(loc $startpos $endpos, tag, eunit)}
 
 data_product_pair: tag=TAG COLON? data=data {tag, data}
 
@@ -116,7 +94,7 @@ expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
 | LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(loc $startpos $endpos, pe, pt, acc)) p e}
-| LPAREN p=separated_list(COMMA, expr) RPAREN {match p with [] -> EId(loc $startpos $endpos, "unit") | [e] -> e | p -> ETuple(loc $startpos $endpos, p)}
+| LPAREN p=separated_list(COMMA, expr) RPAREN {let loc = loc $startpos $endpos in match p with [] -> eunit_loc loc| [e] -> e | p -> etuple ~loc p}
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
 | LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
@@ -126,10 +104,14 @@ expr0:
 | STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
 
 expr:
-| f=expr0 args=arg* { app (loc $startpos $endpos) f args }
-| tag=TAG e=expr0? {match e with Some e -> ESum(loc $startpos $endpos, tag, e) | None -> ESum(loc $startpos $endpos, tag, EId(loc $startpos $endpos, "unit"))}
+| f=expr0 args=expr_arg* { app (loc $startpos $endpos) f args }
+| tag=TAG e=expr0? {
+  let loc=loc $startpos $endpos in 
+  let arg = match e with Some e -> [e] | None -> [] in
+  esum ~loc tag arg}
 | e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(loc $startpos $endpos, e, c)}
 | e=expr TYPE_ANNOT t=etype {ETypeAnnot(loc $startpos $endpos, e, t)}
+(* TODO can put infix operators in a separate rule if it's inlined, to preserve precedences. *)
 | a=expr EQ  b=expr {EBinOp(loc $startpos $endpos, a, BEq, b)}
 | a=expr NEQ b=expr {EBinOp(loc $startpos $endpos, a, BNeq, b)}
 | a=expr LE  b=expr {EBinOp(loc $startpos $endpos, a, BLe, b)}
@@ -148,9 +130,9 @@ expr:
 | a=expr LSL b=expr {EBinOp(loc $startpos $endpos, a, BLsl, b)}
 | MINUS a=expr {EUnOp(loc $startpos $endpos, UNeg, a)}
 
-arg:
+expr_arg:
 | e=expr0 {e}
-| tag=TAG {ESum(loc $startpos $endpos, tag, EId(loc $startpos $endpos, "unit"))}
+| tag=TAG {esum ~loc:(loc $startpos $endpos) tag []}
 | LPAREN e=expr RPAREN {e}
 
 tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}

@@ -76,7 +76,7 @@ let get_sum_decl_cases ctx (t:A.etype) =
 let rec compile_expr ctx e =
   let c = compile_expr ctx in
   let e_type = Ctx.retrieve_type ctx e in
-  (* print_endline("exprT->iExpr: "^P.string_of_expr e^"; typeT: "^P.string_of_type e_type);  *)
+  (* print_endline("exprT->iExpr: "^P.string_of_expr e^"; typeT: "^P.string_of_type e_type);   *)
   let it = compile_etype ctx e_type in
 
   match e with
@@ -168,48 +168,11 @@ let rec compile_expr ctx e =
 
   | A.ETypeAnnot (_, e, t) -> c e
 
-let check_contract_calls expr = 
-  let rec forbidden list where =
-    if List.exists f list
-    then unsupported ("Contract calls forbidden in "^where)
-    else false
-  and f = function
-  | A.ELit _ | A.EId _ -> false
-  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _)       -> f e
-  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
-  | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, "call-contract", _, _)   -> false
-  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
-  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] "stored field updates"
-  | A.ETuple(_, list)                     -> forbidden list "tuples"
-  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
-  | A.ETupleGet(_, e, _)                  -> f e
-  | A.ELet(_, "call-contract", _, _, _) -> false
-  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
-  in f expr
-
-let check_store_set expr =
-  let rec forbidden list where =
-    if List.exists f list
-    then unsupported ("Storage updates forbidden in "^where)
-    else false
-  and f = function
-  | A.ELit _ | A.EId _ -> false
-  | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
-  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> f e) list
-  | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
-  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
-  | A.ETuple(_, list)                     -> forbidden list "tuples"
-  | A.ETupleGet(_, e, _)                  -> f e
-  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
-  | A.ELet(_, "call-contract", _, _, _) -> false
-  | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
-  in f expr
-  
+let compile_contract (c: Typecheck.typed_contract) : I.contract =
+  let ctx = c.Typecheck.ctx in
+  { I.code         = compile_expr ctx c.Typecheck.code;
+    I.storage_type = compile_etype ctx c.Typecheck.storage_type;
+    I.storage_init = ( match c.Typecheck.storage_init with
+                     | Some e -> Some (compile_expr ctx e)
+                     | None   -> None
+                     ) }

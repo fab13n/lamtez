@@ -89,12 +89,51 @@ let loc_of_decl = function
 | DProduct(loc, _, _, _) | DSum(loc, _, _, _)
 | DAlias(loc, _, _, _) | DPrim(loc, _, _) -> loc
 
-let tprim0 id = TApp(noloc, id, [])
-let rec tlambda = function [] -> raise Not_found | [t] -> t | t :: ts' -> TLambda(noloc, t, tlambda ts')
-let tzero = TApp(noloc, "zero", [])
-let tunit = TApp(noloc, "unit", [])
-let toption x = TApp(noloc, "option", [x])
-let tlist = TFail
+let noloc = None
+
+let loc2 a b = match a, b with
+  | Some(a, _), Some(_, b) | Some(a, b), None | None, Some(a, b) -> Some(a, b)
+  | None, None -> None
+let loc2e a b = loc2 (loc_of_expr a) (loc_of_expr b)
+
+let rec tlambda ?(loc=noloc) l = match l with
+  | [] -> raise (Invalid_argument "tlambda")
+  | [t] -> t 
+  | t :: ts' -> TLambda(loc, t, tlambda ts')
+let tapp ?(loc=noloc) name args = TApp(noloc, name, args)
+let tprim ?(loc=noloc) id = tapp id []
+let tzero = tprim "zero" 
+let tunit = TTuple(noloc, [])
+let toption ?(loc=noloc) x = tapp "option" [x]
+let tid ?(loc=noloc) id = TId(loc, id)
+let ttuple ?(loc=noloc) list = match list with
+| [] -> tunit
+| [t] -> t
+| list -> TTuple(loc, list)
+
+let eid ?(loc=noloc) id = EId(loc, id)
+let eunit_loc ~loc = ETuple(loc, []) (* TODO Should be tuple *)
+let eunit = eunit_loc noloc
+let etuple ?(loc=noloc) list = match list with
+  | [] -> eunit_loc ~loc
+  | [e] -> e
+  | list -> ETuple(loc, list) 
+let esum ?(loc=noloc) id args = 
+  let arg = match args with
+  | [] -> eunit
+  | [e] -> e
+  | list ->
+    let loc = loc2e (List.hd list) (List.hd (List.rev list)) in
+    etuple ~loc list in
+  ESum(loc, id, arg) 
+
+let eapp = function [] -> assert false | f :: args ->
+  let l1 = loc_of_expr f in
+  let fold acc arg =
+    let loc = loc2 l1 (loc_of_expr arg) in
+    EApp(loc, acc, arg) in
+  List.fold_left fold f args
+
 
 let fresh_var =
   let fresh_var_counter = ref 0 in

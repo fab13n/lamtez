@@ -1,7 +1,7 @@
-@v0 :: int
-@v1 :: nat
-@v2 :: bool
-@v3 :: string
+@v0 :: int = +1
+@v1 :: nat = 2
+@v2 :: bool = False
+@v3 :: string = "hello"
 
 \(param :: bool):
 
