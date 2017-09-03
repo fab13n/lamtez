@@ -89,7 +89,6 @@ let parse_file a =
         Printexc.print_backtrace stdout;
         raise Exit
     in
-    let ctx = typed_contract.Typecheck.ctx in
     log ("Typechecked succesfully. code :: "^
          String_of_ast.string_of_type typed_contract.Typecheck.param_type^" -> "^
          String_of_ast.string_of_type typed_contract.Typecheck.result_type^"; storage :: "^
