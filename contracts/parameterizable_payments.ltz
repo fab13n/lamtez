@@ -1,0 +1,20 @@
+type line = Title: string * Amount: tez * Destination: contract unit unit
+type t_param = Register: line + Execute: nat
+
+@approver :: contract nat (nat * bool)
+@index    :: nat
+@map      :: map nat line
+
+\(p :: t_param):
+( p ?
+| Register line: @map <- map-update @index (Some line) @map;
+                 @index <- @index + 1;
+                 ()
+| Execute i: let response = contract-call @approver i tz0.00;
+             let _ = ( response.1 ? False: fail | True: ());
+             ( map-get i @map ?
+             | None: fail  # This should not happen
+             | Some line: @map <- map-update i None @map;
+                          contract-call line.Destination () line.Amount
+             )
+)

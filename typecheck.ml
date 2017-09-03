@@ -347,7 +347,7 @@ let typecheck_decl ctx = function
   | A.DProduct(_, var, params, cases) -> Ctx.add_product var params cases ctx
   | A.DSum(_, var, params, cases) -> Ctx.add_sum var params cases ctx
 
-let typecheck_store (ctx, fields, inits) (tag, etype, init) =
+let typecheck_store (tag, etype, init) (ctx, fields, inits) =
   if List.mem_assoc tag fields then unsound("Storage field "^tag^" redefined");
   let ctx, inits = match inits, init with
   | None, _ | _, None -> ctx, None
@@ -405,19 +405,23 @@ let check_store_set expr =
   in let _ = f expr in
   ()
   
-let typecheck_contract ctx (declarations, storage_fields, code) =
+let typecheck_contract ctx (type_declarations, storage_fields, code) =
   (* TODO is the arity of A.TApp() type properly checked? *)
 
   (* Incorporate type declarations in the context. *)
-  let ctx = List.fold_left typecheck_decl ctx declarations in
+  let ctx = List.fold_left typecheck_decl ctx type_declarations in
 
   (* Turn store declarations into a sum declaration and product. *)
-  let ctx, store_fields, init_fields = List.fold_left typecheck_store (ctx, [], Some []) storage_fields in
-  let ctx = Ctx.add_product "@" [] store_fields ctx in
-  let ctx = Ctx.add_evar "@" ([], A.tprim "@") ctx in
+  let ctx, store_fields, init_fields = List.fold_right typecheck_store storage_fields (ctx, [], Some []) in
+  let ctx = match store_fields with
+  | [] -> let ctx = Ctx.add_alias "@" ([], A.tunit) ctx in
+          Ctx.add_evar "@" ([], A.tunit) ctx
+  | _ -> let ctx = Ctx.add_product "@" [] store_fields ctx in
+         Ctx.add_evar "@" ([], A.tprim "@") ctx in
+    
   let ctx, storage_init = match init_fields with None -> ctx, None | Some fields -> 
     (* The expression must be typechecked, in order to be registered for Ctx.retrive_type. *)
-    let e = A.EProduct(A.noloc, fields) in
+    let e = if fields=[] then A.eunit else A.EProduct(A.noloc, fields) in
     let ctx, _ = typecheck_expr ctx e in
     ctx, Some e
   in

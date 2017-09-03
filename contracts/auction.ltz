@@ -35,10 +35,10 @@ type bid = Key: key * Refund: contract unit unit
 
 # Check dates: is the auction still running?
 let _ =
-(now > @current_end_date ? True: fail | False: ());
+(self-now > @current_end_date ? True: fail | False: ());
 let _ =
 ( @hard_end_date ?
-| Some date: (now > date ? True: fail | False: ())
+| Some date: (self-now > date ? True: fail | False: ())
 | None: ()
 );
 
@@ -47,7 +47,7 @@ let _ =
 ( self-amount > @current_price + @increment ? False: fail | True: ());
 
 # Recompute @current_end_date
-let new_date = now + @raising_delay;
+let new_date = self-now + @raising_delay;
 @current_end_date <- (new_date > @current_end_date ? True: new_date | False: @current_end_date);
 
 # Reimburse previous holder
