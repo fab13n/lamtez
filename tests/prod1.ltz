@@ -6,6 +6,6 @@ type prod = Int_0 int * String_1 string * Bool_2 bool
 
   let x = { Int_0:    @x.Int_0 - 1
           , String_1: @x.String_1 ^ "!"
-		  , Bool_2:   @x.Bool_2 or False
+          , Bool_2:   @x.Bool_2 or False
           };
   x

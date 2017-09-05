@@ -32,10 +32,10 @@ self-now < @Z + one_day ?
   | Payment whom:
     ( whom = "buyer" ?
     | True: @paid_by_B <- @paid_by_B + self-amount; ()
-	| False:
-	  ( whom = "seller" ?
+    | False:
+      ( whom = "seller" ?
       | True:   @paid_by_S <- @paid_by_S + self-amount; ()
-	  | False:  fail ))) # invalid string
+      | False:  fail ))) # invalid string
 
 # After Z+24h
 | False:
@@ -49,39 +49,39 @@ self-now < @Z + one_day ?
 
   | True:  # Enough founds, freeze until T, continue after T
     let _ = self-now < @T ? True: fail | False: ();
-	( self-now < @T + one_day ?
+    ( self-now < @T + one_day ?
 
     # Between T and T+24h
     | True:
-	  ( parameter ?
-	  | Delivery _: fail
-	  | Payment whom:
-	    ( whom = "buyer" ?
-		| False: fail
-		| True:
-		  let paid = @paid_by_B + self-amount;
-		  paid > @Q * @K ? True: fail | False: () ))  # Don't accept too much
+      ( parameter ?
+      | Delivery _: fail
+      | Payment whom:
+        ( whom = "buyer" ?
+        | False: fail
+        | True:
+          let paid = @paid_by_B + self-amount;
+          paid > @Q * @K ? True: fail | False: () ))  # Don't accept too much
 
     # After T+24h
     | False:
       ( @paid_by_B = @Q * @K ?
-	  | False: contract-call @S () self-balance  # B didn't pay, money goes to the S
-	  | True:  # Buyer paid
-	    ( self-now < @T + one_day + one_day ?
+      | False: contract-call @S () self-balance  # B didn't pay, money goes to the S
+      | True:  # Buyer paid
+        ( self-now < @T + one_day + one_day ?
 
-		# Between T+24h and T+48h
-		| True:
-		  # Only accept messages from W
-		  let sender = contract-manager (self-source :: contract unit unit);
-		  let _ = sender = contract-manager @W ? False: fail | True: ();
+        # Between T+24h and T+48h
+        | True:
+          # Only accept messages from W
+          let sender = contract-manager (self-source :: contract unit unit);
+          let _ = sender = contract-manager @W ? False: fail | True: ();
           ( parameter ?
-		  | Payment _: fail
-		  | Delivery q:
-		    @delivered <- @delivered + q;
-		    ( @delivered >= @Q ?
-			| False: ()  # Wait for more
-			| True: let _ = contract-call @S () self-balance; () ))
+          | Payment _: fail
+          | Delivery q:
+            @delivered <- @delivered + q;
+            ( @delivered >= @Q ?
+            | False: ()  # Wait for more
+            | True: let _ = contract-call @S () self-balance; () ))
 
-		# after T+48h
-		| False: let _ = contract-call @B () self-balance; () # Timeout, money goes to B
+        # after T+48h
+        | False: let _ = contract-call @B () self-balance; () # Timeout, money goes to B
 ))))

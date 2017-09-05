@@ -13,14 +13,14 @@ let _ = @status != "open" ? True: fail | False: ();
 self-now < @time_threshold ?
 | True: ( self-balance < tz1.00 + @broker_fee + @amount_threshold ?
         | True: ()
-		| False: @status <- "success";
-		         let _ = contract-call @broker () @broker_fee;
-				 let _ = contract-call @when_threshold_reached () @amount_threshold;
-				 ())
+        | False: @status <- "success";
+                 let _ = contract-call @broker () @broker_fee;
+                 let _ = contract-call @when_threshold_reached () @amount_threshold;
+                 ())
 
 | False: @status <- "timeout";
          let available = self-balance - tz1.00;
-		 let fee = available < @broker_fee ? True: available | False: @broker_fee;
-	     let _ = contract-call @broker () fee;
+         let fee = available < @broker_fee ? True: available | False: @broker_fee;
+         let _ = contract-call @broker () fee;
          let _ = contract-call @when_too_late () (self-balance - tz1.00);
-		 ()
+         ()
