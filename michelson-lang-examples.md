@@ -1,10 +1,13 @@
-As a comparison with hand-written Michelson code, here are some examples of
-contracts, described on http://www.michelson-lang.com, rewritten in Lamtez
+# Some examples inspired by www.michelson-lang.com
+
+As a comparison with hand-written Michelson code, here are some
+examples of contracts, described on http://www.michelson-lang.com,
+rewritten in Lamtez.
 
 ## Identity
 
-This one is as striaghtforward in Lamtez as in Michelson: just take a unit
-and return it.
+This one is as striaghtforward in Lamtez as in Michelson: just take a
+unit and return it.
 
     # id.ltz
     \(p :: unit): p
@@ -19,8 +22,8 @@ Here again nothing fancy:
 
 ## At least
 
-Here we'll use a sum case matching to encode an if/then/else. We also introduce
-a stored variable `minimum`:
+Here we'll use a sum case matching to encode an if/then/else. We also
+introduce a stored variable `minimum`:
 
     @minimum :: tez = tz1.00 # with a default value
     \(p :: unit): ( self-amount >= @minimum ?
@@ -30,9 +33,10 @@ a stored variable `minimum`:
 
 ## Queue
 
-This one works exactly as the Michelson version (we only declare a type alias for the
-elements in the queue, so that it's easily changed). As you can see, options are
-handled like other sum types with a `?...|...|...` accessor.
+This one works exactly as the Michelson version (we only declare a
+type alias for the elements in the queue, so that it's easily
+changed). As you can see, options are handled like other sum types
+with a `?...|...|...` accessor.
 
     type data = string
 
@@ -55,10 +59,10 @@ handled like other sum types with a `?...|...|...` accessor.
 
 ## Data publisher
 
-There are no new concept introduced here. I've made the fee a stored parameter, 
-because it's not harder than keeping it hard-coded. Compared to other ML dialects,
-this example shows that Lamtez still lacks destructuring (irrefutable) patterns:
-instead of writing 
+There are no new concept introduced here. I've made the fee a stored
+parameter, because it's not harder than keeping it hard-coded.
+Compared to other ML dialects, this example shows that Lamtez still
+lacks destructuring (irrefutable) patterns: instead of writing
 `Some signed_data: let sig = signed_data.0; let data = signed_data.1; ...`
 it would have been nice to write `Some (sig, data): ...`.
 
@@ -117,8 +121,9 @@ it would have been nice to write `Some (sig, data): ...`.
                     )
     )
 
-If we wanted to prevent such a deep nesting of conditions, we could have used 
-the fact that `fail` stops the whole contract, with idioms `let _ = (cond ? True: fail | False: ())`:
+If we wanted to prevent such a deep nesting of conditions, we could
+have used the fact that `fail` stops the whole contract, with idioms
+`let _ = (cond ? True: fail | False: ())`:
 
     type withdrawal = Key: key * Amount: tez * Signature: signature
     type operation = Deposit key + Withdrawal withdrawal
@@ -135,7 +140,7 @@ the fact that `fail` stops the whole contract, with idioms `let _ = (cond ? True
         @accounts <- map-update key (Some new_balance) @accounts;
         ()
     | Withdrawal w:
-      let authenticated = crypto-check w.Key w.Signature (crypto-hash w.Amount); 
+      let authenticated = crypto-check w.Key w.Signature (crypto-hash w.Amount);
       let _ = authenticated ? True: () | False: fail;
       ( map-get w.Key @accounts ?
       | None: fail  # withdrawal denied (no such account)
@@ -195,11 +200,12 @@ First, mapping a function on a list:
     let f: \x: x+1;
     list-map f param
 
-With the following example, something noteworthy is happening: although Lamtez
-handles the storage for you, so you don't have to separate it from the parameter
-at the beginning nor bundle it with the result at the end, this isn't true
-anymore when creating contracts: these take as parameter a function of type
-`forall p r s: (p*s) -> (r*s)`.
+With the following example, something noteworthy is happening:
+although Lamtez handles the storage for you, so you don't have to
+separate it from the parameter at the beginning nor bundle it with the
+result at the end, this isn't true anymore when creating contracts:
+these take as parameter a function of type `forall p r s: (p*s) ->
+(r*s)`.
 
     type t = (list int * unit)
 
@@ -210,8 +216,8 @@ anymore when creating contracts: these take as parameter a function of type
 
 ## Parameterizable payment contract
 
-This one is tedious to follow in Michelson, quite a bit of stack shuffling!
-With named variables and types, here's my version:
+This one is tedious to follow in Michelson, quite a bit of stack
+shuffling!  With named variables and types, here's my version:
 
     type line    = Title: string * Amount: tez * Destination: contract unit unit
     type t_param = Register: line + Execute: nat
@@ -234,18 +240,21 @@ With named variables and types, here's my version:
 
 My tz0.02 about this contract:
 
-* my guess is, the approving contract returns the index number because it would
-  be too much hassle to give it a storage slot. Having that automated out, we
-  could do it. The approver signature would then become `nat->bool`.
+* my guess is, the approving contract returns the index number because
+  it would be too much hassle to give it a storage slot. Having that
+  automated out, we could do it. The approver signature would then
+  become `nat->bool`.
 
-* when registering a line, the index number is allocated by the contract, and not
-  returned to the caller. I'm not sure how the approver could decide anything
-  with so little information, I think this number should be returned as the 
-  contract's result.
+* when registering a line, the index number is allocated by the
+  contract, and not returned to the caller. I'm not sure how the
+  approver could decide anything with so little information, I think
+  this number should be returned as the contract's result.
 
-* the strings in the registered lines don't seem to be used. Shouldn't we refer
-  to lines by their name rather than by number? This would imply  to check their
-  unicity, and to use them as map keys.
+* the strings in the registered lines don't seem to be used. Shouldn't
+  we refer to lines by their name rather than by number? This would
+  imply to check their unicity, and to use them as map keys.
+
+~
 
     type t_param = Register: (string * account * tez) + Execute: string
 
@@ -265,3 +274,73 @@ My tz0.02 about this contract:
                  | None: fail  # This should not happen
                  | Some x: @map <- map-update i None @map;
                            contract-call x.0 () x.1))
+
+## Some examples from the Michelson official doc
+
+### Reservoir
+
+The
+[official Michelson documentation](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md)
+also comes with some smart contract examples. The simplest non-trivial
+one is a reservoir contract: there's a time limit and a money limit;
+if the contract gets more than the money threshold before the time
+threshold elapse, then the money goes to an account; otherwise it goes
+to another.
+
+	@time_threshold         :: time
+	@amount_threshold       :: tez
+	@when_threshold_reached :: account
+	@when_too_late          :: account
+
+	\(p :: unit):
+	self-now < @time_threshold ?
+	| True: ( self-amount > @amount_threshold ?
+            | True: contract-call @when_threshold_reached () self-balance
+	        | False: () # Amount not reach, but not too late yet
+            )
+	| False: contract-call @when_too_late () self-balance
+
+To use such a contract on a Kickstarter-like fundraising campaign, one would
+need to keep track of whom paid what, to reimbourse donators if the threshold
+is missed. Also, one would probably want to let the campaign continue until
+the limit date, even if the money threshold is reached before.
+
+### Scrutable reservoir
+
+This contract also introduces a broker, who gets a fee whether the
+fundraising succeeds or not. Also, the contract keeps a status
+`"open"`, `"success"` or `"timeout"`, and keeps `tz1.00` on its balance
+so that the contract isn't destroyed and the status can be checked.
+
+    @status                 :: string
+    @time_threshold         :: time
+    @amount_threshold       :: tez
+    @when_threshold_reached :: account
+    @when_too_late          :: account
+    @broker                 :: account
+    @broker_fee             :: tez
+
+    \(p :: unit):
+
+    let _ = @status != "open" ? True: fail | False: ();
+
+    self-now < @time_threshold ?
+    | True: ( self-balance < tz1.00 + @broker_fee + @amount_threshold ?
+            | True: ()
+    		| False: @status <- "success";
+    		         let _ = contract-call @broker () @broker_fee;
+    				 let _ = contract-call @when_threshold_reached () @amount_threshold;
+    				 ())
+
+    | False: @status <- "timeout";
+             let available = self-balance - tz1.00;
+    		 let fee = available < @broker_fee ? True: available | False: @broker_fee;
+    	     let _ = contract-call @broker () fee;
+             let _ = contract-call @when_too_late () (self-balance - tz1.00);
+    		 ()
+
+### Forward contract
+
+A more complex contract, in the same document, implement a forward contract.
+[It is available in Lamtez](https://github.com/fab13n/lamtez/blob/master/contracts/forward.ltz),
+but a bit long to be copy-pasted here.
