@@ -1,0 +1,87 @@
+type parameter = Payment: string + Delivery: nat
+
+@Q         :: nat     # quantity agreed upon
+@T         :: time    # delivery date
+@Z         :: time    # agreement date
+@K         :: tez     # strike price (per ton)
+@C         :: tez     # collateral (per ton)
+@B         :: account # buyer
+@S         :: account # seller
+@W         :: account # warehouse
+@paid_by_B :: tez
+@paid_by_S :: tez
+@delivered :: nat
+
+# between Z and Z+24h, B and S can send money (tagged with param "buyer" or "seller")
+# between T and T+24h, B must pay Q×K - @paid_by_buyer
+# after T+24h, if B paid less then Q×K all the money goes to S
+# if B paid in time, S must deliver at least Q tons of peas between T+24h and T+48h,
+# as reported by the warehouse with `Delivery n` parameters.
+# if at least Q is delivered in time, all the money goes to S
+# if too late, all the money goes to B
+
+\(parameter :: parameter):
+
+let one_day = 24 * 60 * 60;
+self-now < @Z + one_day ?
+
+# Before Z+24h
+| True:
+  ( parameter ?
+  | Delivery _: fail  # Too early for delivery
+  | Payment whom:
+    ( whom = "buyer" ?
+    | True: @paid_by_B <- @paid_by_B + self-amount; ()
+	| False:
+	  ( whom = "seller" ?
+      | True:   @paid_by_S <- @paid_by_S + self-amount; ()
+	  | False:  fail ))) # invalid string
+
+# After Z+24h
+| False:
+  let required = 2 * @Q * @C + tz1.00;
+  ( self-balance >= required ?
+  | False:  # Refund
+    let _ = contract-call @B () @paid_by_B;
+    let _ = contract-call @S () @paid_by_S;
+    let _ = contract-call @W () self-balance; # Destroys the account
+    ()
+
+  | True:  # Enough founds, freeze until T, continue after T
+    let _ = self-now < @T ? True: fail | False: ();
+	( self-now < @T + one_day ?
+
+    # Between T and T+24h
+    | True:
+	  ( parameter ?
+	  | Delivery _: fail
+	  | Payment whom:
+	    ( whom = "buyer" ?
+		| False: fail
+		| True:
+		  let paid = @paid_by_B + self-amount;
+		  paid > @Q * @K ? True: fail | False: () ))  # Don't accept too much
+
+    # After T+24h
+    | False:
+      ( @paid_by_B = @Q * @K ?
+	  | False: contract-call @S () self-balance  # B didn't pay, money goes to the S
+	  | True:  # Buyer paid
+	    ( self-now < @T + one_day + one_day ?
+
+		# Between T+24h and T+48h
+		| True:
+		  # Only accept messages from W
+		  let sender = contract-manager (self-source :: contract unit unit);
+		  let _ = sender = contract-manager @W ? False: fail | True: ();
+          ( parameter ?
+		  | Payment _: fail
+		  | Delivery q:
+		    @delivered <- @delivered + q;
+		    ( @delivered >= @Q ?
+			| False: ()  # Wait for more
+			| True: let _ = contract-call @S () self-balance; () ))
+
+		# after T+48h
+		| False: let _ = contract-call @B () self-balance; () # Timeout, money goes to B
+))))

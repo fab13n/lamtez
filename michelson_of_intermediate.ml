@@ -102,7 +102,7 @@ and compile_primitive stk name args t_result =
     "set-mem", "MEM"; "set-update", "UPDATE";
     "map-mem", "MEM"; "map-get", "GET"; "map-update", "UPDATE"; "map-map", "MAP";
     "list-map", "MAP";
-    "EQ", "CMPEQ"; "LT", "CMPLT"; "LE", "CMPLE"; "GE", "CMPGE"; "GT", "CMPGT";
+    "EQ", "CMPEQ"; "NEQ", "CMPNEQ"; "LT", "CMPLT"; "LE", "CMPLE"; "GE", "CMPGE"; "GT", "CMPGT";
   ] in
 
   let simple_operators = [

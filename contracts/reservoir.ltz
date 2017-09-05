@@ -1,0 +1,12 @@
+@time_threshold         :: time
+@amount_threshold       :: tez
+@when_threshold_reached :: account
+@when_too_late          :: account
+
+\(p :: unit):
+self-now < @time_threshold ?
+| True: ( self-amount > @amount_threshold ?
+        | True: contract-call @when_threshold_reached () self-balance
+		| False: () # Amount not reach, but not too late yet
+        )
+| False: contract-call @when_too_late () self-balance
