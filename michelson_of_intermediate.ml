@@ -7,20 +7,12 @@ module Stk_S = Compile_stack_store
 let _DEBUG_ =true
 let debug_indent = ref 0
 
-type stack = (I.evar option * I.etype) list
-
 let dup n = "D"^String.make n 'U'^"P"
 let rec peek = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "DIP { %s }; SWAP" (peek (n-1))
 let rec poke = function 0 -> "" | 1 -> "SWAP" | n -> sprintf "SWAP; DIP { %s }" (poke (n-1))
 
 (* Compose code instructions together in a signle line, with semicolon separators. *)
 let cc x = String.concat "; " (List.filter ((<>) "") x)
-
-
-let rec get_level stk v = match stk with
-  | [] -> None
-  | (Some v', _) :: _ when v=v' -> Some 1
-  | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
 
 let rec compile_etype t =
   let c = compile_etype in
@@ -35,6 +27,19 @@ let rec compile_etype t =
   | I.TSum(Some("option", [t']), _) -> sprintf "(option %s)" (c t')
   | I.TSum(_, lazy fields) -> Compile_composite.sum_type (List.map c fields)
 
+type stack_item_kind = SAnon | SVar
+type stack_item = (stack_item_kind * string * I.etype)
+type stack = stack_item list
+
+let item_e expr etype = (SAnon, String_of_intermediate.string_of_untyped_expr expr, etype)
+let item_s str  etype = (SAnon, str, etype)
+let item_v name etype = (SVar, name, etype)
+
+let rec get_level stk v = match stk with
+  | [] -> None
+  | (SVar, v', _) :: _ when v=v' -> Some 1
+  | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
+
 let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * string) =
   if _DEBUG_ then begin
     print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_untyped_expr ie);
@@ -42,37 +47,38 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     incr debug_indent
   end;
   let stk, code = match ie with
-  | I.ELit x -> (match it with I.TPrim(t_name, []) -> (None, it)::stk, sprintf "PUSH %s %s" t_name x | _ -> unsound "litteral type")
+  | I.ELit x -> (match it with I.TPrim(t_name, []) -> 
+    (item_e ie it) :: stk, sprintf "PUSH %s %s" t_name x | _ -> unsound "litteral type")
   | I.EId name -> begin match get_level stk name with
-    | Some n -> (Some name, it)::stk, dup n (* Bound variable; remember its name on stack too (might help making shorter DUU*Ps). *)
-    | None -> (None, it)::stk, compile_primitive stk name [] it (* Free variable, must be a primitive. *)
+    | Some n -> (item_v name it)::stk, dup n (* Bound variable; remember its name on stack too (might help making shorter DUU*Ps). *)
+    | None -> (item_e ie it)::stk, compile_primitive stk name [] it (* Free variable, must be a primitive. *)
     end
   | I.EColl(Ast.CList, list) -> compile_EColl_CList stk list it
   | I.EColl(Ast.CMap,  list) -> compile_EColl_CMap  stk list it
   | I.EColl(Ast.CSet,  list) -> compile_EColl_CSet  stk list it
   | I.ELambda(params, body) -> compile_ELambda stk params body it
-  | I.ELet(v, ie0, ie1) ->
-    let stk, c0 = compile_typed_expr stk ie0 in
-    let stk = (Some v, snd ie0) :: List.tl stk in (* name the value just computed *)
-    let stk, c1 = compile_typed_expr stk ie1 in
+  | I.ELet(v, et0, et1) ->
+    let stk, c0 = compile_typed_expr stk et0 in
+    let stk = (item_v v (snd et0)) :: List.tl stk in (* name the value just computed *)
+    let stk, c1 = compile_typed_expr stk et1 in
     let stk = match stk with r :: v :: stk -> r :: stk | _ -> unsound "stack too shallow" in
     stk, c0^"# let "^v^" = ... in ...\n"^c1^"DIP { DROP } # remove "^v^"\n"
   | I.EApp(f, args) -> compile_EApp stk f args it
-  | I.EProduct [] -> (None, I.TProduct(Some("unit", []), lazy []))::stk, "UNIT"
+  | I.EProduct [] -> (item_e ie it) :: stk, "UNIT"
   | I.EProduct fields ->
     let stk', code = List.fold_left
       (fun (stk, code) field -> let stk, code' = compile_typed_expr stk field in stk, code^code')
       (stk, "") (List.rev fields) in
-    (None, it)::stk, code^Compile_composite.product_make(List.length fields)
+    (item_e ie it)::stk, code^Compile_composite.product_make(List.length fields)
   | I.ESum(i, n, content) -> compile_ESum stk i n content it
-  | I.EProductGet(ie, i, n) ->
-    let _, code = compile_typed_expr stk ie in
-    (None, it)::stk, code^Compile_composite.product_get i n
-  | I.EProductSet(e0, i, n, e1) ->
-    let stk', c0 = compile_typed_expr stk e0 in
-    let stk', c1 = compile_typed_expr stk e1 in (* TODO sure that the stask can't be messsed up? *)
-    (None, it)::stk, c0^c1^Compile_composite.product_set i n
-  | I.EStoreSet(i, e0, e1) -> compile_EStoreSet stk i e0 e1
+  | I.EProductGet(et0, i, n) ->
+    let _, code = compile_typed_expr stk et0 in
+    (item_e ie it)::stk, code^Compile_composite.product_get i n
+  | I.EProductSet(et0, i, n, et1) ->
+    let stk', c0 = compile_typed_expr stk et0 in
+    let stk', c1 = compile_typed_expr stk et1 in (* TODO sure that the stask can't be messsed up? *)
+    (item_e ie it)::stk, c0^c1^Compile_composite.product_set i n
+  | I.EStoreSet(i, et0, et1) -> compile_EStoreSet stk i et0 et1
   | I.ESumCase(test, cases) -> compile_ESumCase stk test cases it
   in
   if _DEBUG_ then begin
@@ -80,9 +86,9 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
     print_endline (String.make (2 * !debug_indent) ' '^"Result: "^Code_format.single_line code)
   end;
   let last_char = String.get code (String.length code -1)  in
-  let string_of_stk_item (v, t) = (match v with None -> "" | Some x -> x^": ")^compile_etype t in
-  let comment = sep_list ", " string_of_stk_item (List.tl stk) in
-  let code = if last_char='\n' then code else code^"; # "^P.string_of_untyped_expr ie^", "^comment^"\n" in
+  let string_of_stk_item (k, v, t) = v in
+  let comment = sep_list ":" string_of_stk_item stk in
+  let code = if last_char='\n' then code else code^"; # "^comment^"\n" in
   stk, code
 
 
@@ -151,7 +157,7 @@ and compile_primitive stk name args t_result =
 
 and compile_EColl_CList stk list t_list =
   let t_elt = match t_list with I.TPrim("list", [t_elt]) -> t_elt | _ -> assert false in
-  let stk = (None, t_list) :: stk in
+  let stk = (item_s "(list ...)"  t_list) :: stk in
   let rec f = function
     | [] -> ["NIL "^compile_etype t_elt]
     | a :: b -> 
@@ -172,8 +178,8 @@ and compile_ELambda stk params body it_lambda =
   match params, body with
   | [(v_param, t_param)], (e_body, t_body) ->
     (* TODO check that there's no free variable. *)
-    let stk, code = compile_typed_expr [Some v_param, t_param] body in
-    (None, it_lambda)::List.tl stk, sprintf "LAMBDA %s %s { %s }"
+    let stk, code = compile_typed_expr [item_v v_param t_param] body in
+    (item_s "lambda" it_lambda)::List.tl stk, sprintf "LAMBDA %s %s { %s }"
       (compile_etype t_param) (compile_etype t_body) code
   | _::_, _ -> unsupported "nested (multi-parameter) lambdas"
   | [], _ -> unsound "I.ELambda without parameter?!"
@@ -187,7 +193,7 @@ and compile_EApp stk f args t_result = match f with
     end
   | (I.EId(name), t_f) -> begin match get_level stk name with
     | Some n -> not_impl "user-defined lambda" (* user-defined lambda *)
-    | None -> (None, t_result)::stk, compile_primitive stk name args t_result
+    | None -> (item_e (I.EApp(f, args)) t_result)::stk, compile_primitive stk name args t_result
     end
   | _ -> unsound "Applying a non-function"
 
@@ -196,7 +202,7 @@ and compile_contract_call stk contract contract_arg amount t_result =
   (* in Lamtez: \/ param result: contract -> param -> tez -> result *)
 
   let stack_storage_type = (* All of the stack, except the final user storage *)
-    let stack_type = List.map snd stk in
+    let stack_type = List.map (fun (_, _, it) -> it) stk in
     let rec f = function [_] -> [] | t::x -> t::f x | [] -> assert false in
     f stack_type in
 
@@ -206,7 +212,7 @@ and compile_contract_call stk contract contract_arg amount t_result =
 
   let n_stack_saving = string_of_int (Stk_S.add stack_storage_type) in
 
-  (None, t_result)::stk,
+  (item_s "contract-call" t_result)::stk,
   c0^c1^c2^
   "DIIIP {\n"^
    "SAVE_STACK "^n_stack_saving^";\n"^
@@ -222,18 +228,18 @@ and compile_ESum stk i n content it =
   match it with
   | I.TSum(Some(sum_type_name, sum_type_args), lazy types) ->
     begin match sum_type_name, sum_type_args, i, n with
-    | "bool",   [],   0, 2 -> (None, it) :: stk, "PUSH bool False"
-    | "bool",   [],   1, 2 -> (None, it) :: stk, "PUSH bool True"
-    | "option", [t'], 0, 2 -> (None, it) :: stk, "NONE "^compile_etype t'
-    | "list",   [t'], 0, 2 -> (None, it) :: stk, "NIL "^compile_etype t'
+    | "bool",   [],   0, 2 -> (item_s "False" it) :: stk, "PUSH bool False"
+    | "bool",   [],   1, 2 -> (item_s "True" it)  :: stk, "PUSH bool True"
+    | "option", [t'], 0, 2 -> (item_s "None" it)  :: stk, "NONE "^compile_etype t'
+    | "list",   [t'], 0, 2 -> (item_s "Nil" it)   :: stk, "NIL "^compile_etype t'
     | "option", [t'], 1, 2 ->
-      let stk, code = compile_typed_expr stk content in (None, it)::List.tl stk, code^"SOME"
+      let stk, code = compile_typed_expr stk content in (item_s "Some" it)::List.tl stk, code^"SOME"
     | "list",   [t'], 1, 2 ->
-      let stk, code = compile_typed_expr stk content in (None, it)::List.tl stk, code^"DUP; CAR; SWAP; CDR; CONS"
+      let stk, code = compile_typed_expr stk content in (item_s "Cons" it)::List.tl stk, code^"DUP; CAR; SWAP; CDR; CONS"
     | _ ->
       let types = List.map compile_etype types in
       let stk, code = compile_typed_expr stk content in
-      (None, it) ::List.tl stk, code^Compile_composite.sum_make i types
+      (item_s (sprintf "sum<%d|%d>" i n) it) ::List.tl stk, code^Compile_composite.sum_make i types
     end
   | _ -> unsound "Not a sum type"
 
@@ -252,7 +258,7 @@ and compile_EStoreSet stk i e_field e_rest =
   (* Current depth of user store *)
   let store_level = match get_level stk "@" with Some n -> n-1 | None -> assert false in
   (* Number of fields in user store *)
-  let n = let _, t_store = List.nth stk store_level in
+  let n = let _, _, t_store = List.nth stk store_level in
           match t_store with I.TProduct(_, lazy fields) -> List.length fields | _ -> assert false in
   (* Perform field update *)
   let c1 = sprintf "%s # PEEK %d user store\n" (peek store_level) store_level^
@@ -273,20 +279,20 @@ and compile_ESumCase stk test cases it =
   | "bool", [(_, _, if_false); (v, _, if_true)] ->
     let _, if_false = compile_typed_expr stk if_false in
     let _, if_true = compile_typed_expr (stk) if_true in
-    (None, it)::stk, sprintf "%sIF { %s}\n{ %s}" code if_true if_false (* TODO make sure unit-bouns variables in cases aren't used *)
+    (item_s "if" it)::stk, sprintf "%sIF { %s}\n{ %s}" code if_true if_false (* TODO make sure unit-bound variables in cases aren't used *)
   | "list", [(_, _, if_nil); (v, t_v, if_cons)] ->
-    let _, if_cons = compile_typed_expr ((Some v, t_v)::stk) if_cons in
+    let _, if_cons = compile_typed_expr ((item_s "CONS" it)::stk) if_cons in
     let _, if_nil = compile_typed_expr stk if_nil in
-    (None, it)::stk, sprintf "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n}\n{ %s}" code v if_cons if_nil
+    (item_s "if_cons" it)::stk, sprintf "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n}\n{ %s}" code v if_cons if_nil
   | "option", [(_, _, if_none); (v, t_v, if_some)] ->
-    let _, if_some = compile_typed_expr ((Some v, t_v)::stk) if_some in
+    let _, if_some = compile_typed_expr ((item_v v t_v)::stk) if_some in
     let _, if_none = compile_typed_expr stk if_none in
-    (None, it)::stk, sprintf "%sIF_NONE { %s}\n{ # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
-  | _ ->
+    (item_s "if_none" it)::stk, sprintf "%sIF_NONE { %s}\n{ # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
+  | _ -> (* User-defined sum type *)
     let f i (v, t_v, ie)  =
       sprintf "# | <%d>(%s):\n%sDIP { DROP }; # remove %s\n"
-        i v (snd (compile_typed_expr ((Some v, t_v)::stk) ie)) v in
-    (None, it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
+        i v (snd (compile_typed_expr ((item_v v t_v)::stk) ie)) v in
+    (item_s (sprintf "sum<%d>" (List.length cases)) it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
 
 let patch_stack_store_operations code =
   let re = Str.regexp "\n *\\(SAVE\\|RESTORE\\)_STACK +\\([0-9]+\\) *;? *\n" in
@@ -363,7 +369,7 @@ let compile_contract i_contract =
   | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
     Stk_S.reset();
 
-    let stk = [(Some v_param, t_param); (Some "@", i_contract.I.storage_type)] in
+    let stk = [(item_v v_param t_param); (item_v "@" i_contract.I.storage_type)] in
     let stk, code = compile_typed_expr stk body in
 
     (* TODO simplify storage if there is no contract-call *)
