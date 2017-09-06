@@ -26,10 +26,7 @@ Here we'll use a sum case matching to encode an if/then/else. We also
 introduce a stored variable `minimum`:
 
     @minimum :: tez = tz1.00 # with a default value
-    \(p :: unit): ( self-amount >= @minimum ?
-                  | True:  ()    # Accepted
-                  | False: fail  # Contract rejected
-                  )
+    \(p :: unit): (if self-amount < @minimum: fail)
 
 ## Queue
 
@@ -45,17 +42,16 @@ with a `?...|...|...` accessor.
     @map :: map nat data = map-empty
 
     \(parameter :: option data):
-    ( parameter ?
+    ( case parameter
     | Some data: @map <- map-update @j (Some data) @map;
                  @j <- @j + 1;
                  None
-    | None: ( map-get @i @map ?
+    | None: ( case map-get @i @map
             | None: None
             | Some data: @map <- map-update @i None @map;
                          @i <- @i + 1;
-                         Some data
-            )
-    )
+                         Some data ))
+
 
 ## Data publisher
 
@@ -74,18 +70,15 @@ it would have been nice to write `Some (sig, data): ...`.
     @fee  :: tez
 
     \(parameter :: operation):
-    ( parameter ?
-    | None: ( self-amount >= @fee ?
+    ( case parameter
+    | None: ( case self-amount >= @fee
             | False: fail
-            | True:  @data
-            )
-    | Some signed_data: let sig = signed_data.0;
+            | True:  @data )
+    | Some signed_data: let sig  = signed_data.0;
                         let data = signed_data.1;
-                        ( crypto-check @key sig data ?
+                        ( case crypto-check @key sig data
                         | False: fail
-                        | True: @data <- data; data
-                        )
-    )
+                        | True: @data <- data; data ))
 
 ## User accounts
 
@@ -95,65 +88,23 @@ it would have been nice to write `Some (sig, data): ...`.
     @accounts :: map key tez
 
     \(operation::operation):
-    ( operation ?
+    ( case operation
     | Deposit key:
-        let new_balance = ( map-get key @accounts ?
-                        | None: self-amount  # Create new account
-                        | Some balance: self-amount + balance  # update existing account
-                        );
+        let new_balance = ( case map-get key @accounts
+                          | None:         self-amount            # Create new account
+                          | Some balance: self-amount + balance  # update existing account);
         @accounts <- map-update key (Some new_balance) @accounts;
         ()
-    | Withdrawal w: ( crypto-check w.Key w.Signature (crypto-hash w.Amount) ?
-                    | False: fail  # withdrawal denied (authentication failed)
-                    | True: ( map-get w.Key @accounts ?
-                            | None: fail  # withdrawal denied (no such account)
-                            | Some balance:
-                                ( balance >= w.Amount ?
-                                | False: fail  # withdrawal denied (insufficient funds)
-                                | True:  let new_balance = ( balance = w.Amount ?
-                                                           | True:  None  # Delete empty account
-                                                           | False: Some (balance - w.Amount)  # update account
-                                                           );
-                                        @accounts <- map-update w.Key new_balance @accounts;
-                                        contract-call (contract-get w.Key) () w.Amount
-                                )
-                            )
-                    )
-    )
-
-If we wanted to prevent such a deep nesting of conditions, we could
-have used the fact that `fail` stops the whole contract, with idioms
-`let _ = (cond ? True: fail | False: ())`:
-
-    type withdrawal = Key: key * Amount: tez * Signature: signature
-    type operation = Deposit key + Withdrawal withdrawal
-
-    @accounts :: map key tez
-
-    \(operation::operation):
-    ( operation ?
-    | Deposit key:
-        let new_balance = ( map-get key @accounts ?
-                          | None: self-amount  # Create new account
-                          | Some balance: self-amount + balance  # update existing account
-                          );
-        @accounts <- map-update key (Some new_balance) @accounts;
-        ()
-    | Withdrawal w:
-      let authenticated = crypto-check w.Key w.Signature (crypto-hash w.Amount);
-      let _ = authenticated ? True: () | False: fail;
-      ( map-get w.Key @accounts ?
-      | None: fail  # withdrawal denied (no such account)
-      | Some balance:
-        let _ = balance >= w.Amount ? True: () | False: fail;
-        let new_balance = ( balance = w.Amount ?
-                          | True:  None  # Delete empty account
-                          | False: Some (balance - w.Amount)  # update account
-                          );
-        @accounts <- map-update w.Key new_balance @accounts;
-        contract-call (contract-get w.Key) () w.Amount
-      )
-    )
+    | Withdrawal w: (if not crypto-check w.Key w.Signature (crypto-hash w.Amount): fail);
+                    ( case map-get w.Key @accounts
+                    | None: fail  # withdrawal denied (no such account)
+                    | Some balance:
+                        (if balance < w.Amount: fail);  # withdrawal denied (insufficient funds)
+                        let new_balance = ( case balance = w.Amount
+                                          | True:  None                       # Delete empty account
+                                          | False: Some (balance - w.Amount)  # update account);
+                        @accounts <- map-update w.Key new_balance @accounts;
+                        contract-call (contract-get w.Key) () w.Amount))
 
 ## King of Tez
 
@@ -163,13 +114,10 @@ have used the fact that `fail` stops the whole contract, with idioms
 
     \(parameter :: key):
     let one_week = 60 * 60 * 24 * 7;
-    ( @enthronement_date + one_week > self.now or self-amount > @enthronement_cost ?
-    | True: @royal_key <- parameter;
-            @enthronement_date <- self-now;
-            @enthronement_cost <- self-amount;
-            ()
-    | False: fail
-    )
+    (if self-now < @enthronement_date + one_week and self-amount < @enthronement_cost: fail);
+    @royal_key         <- parameter;
+    @enthronement_date <- self-now;
+    @enthronement_cost <- self-amount;
 
 ## Some simpler examples
 
@@ -188,16 +136,16 @@ have used the fact that `fail` stops the whole contract, with idioms
 
     \(parameter :: unit):
 
-    ( now >= @release_date ?
-    | False: fail
-    | True:  contract-call @destination () @amount)
+    ( if self-now < @release_date: fail);
+    contract-call @destination () @amount)
 
 ## Lambda, map, and creating contracts
 
 First, mapping a function on a list:
 
     \(param :: list int):
-    let f: \x: x+1;
+
+    let f = \x: x+1;
     list-map f param
 
 With the following example, something noteworthy is happening:
@@ -210,7 +158,8 @@ these take as parameter a function of type `forall p r s: (p*s) ->
     type t = (list int * unit)
 
     \(param :: unit):
-    let map_add1 = \(x :: t): (list-map (\y: y+1) x.0, x.1));
+
+    let map_add1 = \(x :: t): (list-map (\y: y+1) x.0, x.1);
     let key = tz1SuakBpFdG9b4twyfrSMqZzruxhpMeSrE5;
     contract-create key None False False self-amount map_add1
 
@@ -227,12 +176,12 @@ shuffling!  With named variables and types, here's my version:
     @map      :: map nat line
 
     \(p :: t_param):
-    ( p ?
+    ( case p
     | Register line: @map <- map-update @index (Some line) @map;
                      @index <- @index + 1;
                      ()
     | Execute i: let response = contract-call @approver i tz0.00;
-                 let _ = ( response.1 ? False: fail | True: ());
+                 (if not response.1: fail);
                  ( map-get i @map ?
                  | None: fail  # This should not happen
                  | Some line: @map <- map-update i None @map;
@@ -264,16 +213,15 @@ My tz0.02 about this contract:
     \(p :: t_param):
     ( p ?
     | Register line: let id = line.0;
-                     let _ = map-mem id @map ? True: fail | False: ();
+                     (if map-mem id @map: fail);
                      let entry = (line.1, line.2);
                      @map <- map-update @index (Some entry) @map;
                      ()
-    | Execute id: let response = contract-call @approver id tz0.00;
-                 let _ = ( response.1 ? False: fail | True: ());
-                 ( map-get id @map ?
-                 | None: fail  # This should not happen
-                 | Some x: @map <- map-update i None @map;
-                           contract-call x.0 () x.1))
+    | Execute id: (if not (contract-call @approver id tz0.00): fail);
+                  ( map-get id @map ?
+                  | None: fail  # This should not happen
+                  | Some x: @map <- map-update i None @map;
+                            contract-call x.0 () x.1))
 
 ## Some examples from the Michelson official doc
 
@@ -287,18 +235,18 @@ if the contract gets more than the money threshold before the time
 threshold elapse, then the money goes to an account; otherwise it goes
 to another.
 
-	@time_threshold         :: time
-	@amount_threshold       :: tez
-	@when_threshold_reached :: account
-	@when_too_late          :: account
+    @time_threshold         :: time
+    @amount_threshold       :: tez
+    @when_threshold_reached :: account
+    @when_too_late          :: account
 
-	\(p :: unit):
-	self-now < @time_threshold ?
-	| True: ( self-amount > @amount_threshold ?
-            | True: contract-call @when_threshold_reached () self-balance
-	        | False: () # Amount not reach, but not too late yet
-            )
-	| False: contract-call @when_too_late () self-balance
+    \(p :: unit):
+
+    ( if self-now > @time_threshold:
+        contract-call @when_too_late () self-balance
+    | self-amount > @amount_threshold:
+        contract-call @when_threshold_reached () self-balance
+    | else: () )
 
 To use such a contract on a Kickstarter-like fundraising campaign, one would
 need to keep track of whom paid what, to reimbourse donators if the threshold
@@ -322,25 +270,119 @@ so that the contract isn't destroyed and the status can be checked.
 
     \(p :: unit):
 
-    let _ = @status != "open" ? True: fail | False: ();
+    if
+    ### If the contract is realized, don't call it again ###
+    | @status != "open": fail
 
-    self-now < @time_threshold ?
-    | True: ( self-balance < tz1.00 + @broker_fee + @amount_threshold ?
-            | True: ()
-    		| False: @status <- "success";
-    		         let _ = contract-call @broker () @broker_fee;
-    				 let _ = contract-call @when_threshold_reached () @amount_threshold;
-    				 ())
+    ### Open after timeout: let's cancel it, pay broker, send the rest to when_too_late ###
+    | self-now >= @time_threshold:
+        @status <- "timeout";
+        let available = self-balance - tz1.00;
+        let fee = (if available < @broker_fee: available | else: @broker_fee);
+        contract-call @broker () fee;
+        contract-call @when_too_late () (self-balance - tz1.00)
 
-    | False: @status <- "timeout";
-             let available = self-balance - tz1.00;
-    		 let fee = available < @broker_fee ? True: available | False: @broker_fee;
-    	     let _ = contract-call @broker () fee;
-             let _ = contract-call @when_too_late () (self-balance - tz1.00);
-    		 ()
+    ### Money threshold reached before timeout ###
+    | self-balance >= tz1.00 + @broker_fee + @amount_threshold:
+        @status <- "success";
+        contract-call @broker () @broker_fee;
+        contract-call @when_threshold_reached () @amount_threshold
+
+    ### Before timeout, not enough money yet, wait ###
+    | else:
+        ()
 
 ### Forward contract
 
-A more complex contract, in the same document, implement a forward contract.
-[It is available in Lamtez](https://github.com/fab13n/lamtez/blob/master/contracts/forward.ltz),
-but a bit long to be copy-pasted here.
+This is the largest contract example in the doc, and mimics a classic
+non-standardized financial contract. Here's its Lamtez transcription:
+
+    # Forward financial contract, following the sample given in
+    # https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md
+    #
+    # The contract is signed on date `D`. Through it, seller `S` pledges to sell
+    # a quantity `Q` of goods to buyer `B`, at a future date `Z`, and at a price
+    # `K` established when the contract is signed.
+    #
+    # `B` and `S` have to lock up a collateral sum `C×Q` in the contract; if
+    # a stakeholder fails to fulfill their obligation, all of the money locked
+    # up in the contract is sent to the other party.
+    #
+    # Once the contract is created (`Z`), buyer and seller have to lockup their
+    # collaterals before `Z+24h`. If one of them fails to do so, the contract is
+    # voided, and any money sent to the contract is sent back to the owner(s).
+    #
+    # When the due date elapses (`T`), `B` has to pay the full agreed price, minus
+    # the collateral he already locked up, before `T+24h`. If he fails to do so,
+    # all the money is forfeited to `S`.
+    #
+    # If `B` paid the agreed price before `T+24h`, `S` has to provide the goods
+    # between `T+24h` and `T+48h`. To know whether this has been done, we expect
+    # a warehouse operator `W` to be connected to the blockchain, and to report
+    # good deliveries to the contract. If according to `W` the agreed quantity
+    # has been delivered, the 
+
+    type parameter = Payment: string + Delivery: nat
+
+    @Q         :: nat     # quantity agreed upon (in tons)
+    @T         :: time    # delivery date
+    @Z         :: time    # agreement date
+    @K         :: tez     # strike price (per ton)
+    @C         :: tez     # collateral (per ton)
+    @B         :: account # buyer
+    @S         :: account # seller
+    @W         :: account # warehouse
+    @paid_by_B :: tez
+    @paid_by_S :: tez
+    @delivered :: nat
+
+    \(parameter :: parameter):
+
+    let one_day = 24 * 60 * 60;
+
+    if
+    ### Between Z and Z+24h, accept collaterals from B and S ###
+    | self-now  <  @Z + one_day:
+        ( case parameter
+        | Delivery _: fail  # Too early for delivery
+        | Payment whom: ( if
+                        | whom = "buyer":  @paid_by_B <- @paid_by_B + self-amount; ()
+                        | whom = "seller": @paid_by_S <- @paid_by_S + self-amount; ()
+                        | else: fail))
+
+    ### After Z+24h, if collaterals haven't been sent, cancel and refund ###
+    | self-balance  <  2*@Q*@C + tz1.00:  # Refund
+        contract-call @B () @paid_by_B;
+        contract-call @S () @paid_by_S;
+        contract-call @W () self-balance  # Destroys the account
+
+    ### Between Z+24h and T, no interaction allowed ###
+    | self-now  <  @T:
+        fail
+
+    ### Between T and T+24h, accept payment by buyer from the full strike price ###
+    | self-now  <  @T + one_day:
+        ( case parameter
+        | Delivery _: fail
+        | Payment whom: (if whom != "buyer": fail);
+                        let paid = @paid_by_B + self-amount;
+                        (if paid > @Q * @K: fail))  # Don't accept too much
+
+    ### B failed to pay after T+24h => all the money goes to S ###
+    | @paid_by_B != @Q * @K:
+        contract-call @S () self-balance
+
+    ### Between T+24h and T+48h, accept Warehouse reports ###
+    | self-now  <  @T + 2*one_day:
+        let sender = contract-manager (self-source :: contract unit unit);
+        (if sender != contract-manager @W: fail);
+        ( case parameter
+        | Payment _: fail
+        | Delivery q: @delivered <- @delivered + q;
+                    # Contract realized, pay S
+                    (if @delivered >= @Q: 
+                        contract-call @S () self-balance))
+
+    ### S failed to deliver after T+48h => all the money goes to B ###
+    | True:
+        contract-call @B () self-balance  # Timeout, money goes to B

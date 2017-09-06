@@ -1,3 +1,28 @@
+# Forward financial contract, following the sample given in
+# https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md
+#
+# The contract is signed on date `D`. Through it, seller `S` pledges to sell
+# a quantity `Q` of goods to buyer `B`, at a future date `Z`, and at a price
+# `K` established when the contract is signed.
+#
+# `B` and `S` have to lock up a collateral sum `C×Q` in the contract; if
+# a stakeholder fails to fulfill their obligation, all of the money locked
+# up in the contract is sent to the other party.
+#
+# Once the contract is created (`Z`), buyer and seller have to lockup their
+# collaterals before `Z+24h`. If one of them fails to do so, the contract is
+# voided, and any money sent to the contract is sent back to the owner(s).
+#
+# When the due date elapses (`T`), `B` has to pay the full agreed price, minus
+# the collateral he already locked up, before `T+24h`. If he fails to do so,
+# all the money is forfeited to `S`.
+#
+# If `B` paid the agreed price before `T+24h`, `S` has to provide the goods
+# between `T+24h` and `T+48h`. To know whether this has been done, we expect
+# a warehouse operator `W` to be connected to the blockchain, and to report
+# good deliveries to the contract. If according to `W` the agreed quantity
+# has been delivered, the 
+
 type parameter = Payment: string + Delivery: nat
 
 @Q         :: nat     # quantity agreed upon (in tons)
@@ -21,11 +46,10 @@ if
 | self-now  <  @Z + one_day:
     ( case parameter
     | Delivery _: fail  # Too early for delivery
-    | Payment whom:
-        ( if
-        | whom = "buyer":  @paid_by_B <- @paid_by_B + self-amount; ()
-        | whom = "seller": @paid_by_S <- @paid_by_S + self-amount; ()
-        | else: fail))
+    | Payment whom: ( if
+                    | whom = "buyer":  @paid_by_B <- @paid_by_B + self-amount; ()
+                    | whom = "seller": @paid_by_S <- @paid_by_S + self-amount; ()
+                    | else: fail))
 
 ### After Z+24h, if collaterals haven't been sent, cancel and refund ###
 | self-balance  <  2*@Q*@C + tz1.00:  # Refund
@@ -41,10 +65,9 @@ if
 | self-now  <  @T + one_day:
     ( case parameter
     | Delivery _: fail
-    | Payment whom:
-        (if whom != "buyer": fail);
-        let paid = @paid_by_B + self-amount;
-        (if paid > @Q * @K: fail))  # Don't accept too much
+    | Payment whom: (if whom != "buyer": fail);
+                    let paid = @paid_by_B + self-amount;
+                    (if paid > @Q * @K: fail))  # Don't accept too much
 
 ### B failed to pay after T+24h => all the money goes to S ###
 | @paid_by_B != @Q * @K:
@@ -56,10 +79,10 @@ if
     (if sender != contract-manager @W: fail);
     ( case parameter
     | Payment _: fail
-    | Delivery q:
-        @delivered <- @delivered + q;
-        # Contract realized, pay S
-        (if @delivered >= @Q: contract-call @S () self-balance))
+    | Delivery q: @delivered <- @delivered + q;
+                  # Contract realized, pay S
+                  (if @delivered >= @Q: 
+                      contract-call @S () self-balance))
 
 ### S failed to deliver after T+48h => all the money goes to B ###
 | True:

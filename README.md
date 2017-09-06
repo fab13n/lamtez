@@ -1,4 +1,4 @@
-lamtez: a typed lambda-calculus compiling to Tezos' Michelson VM
+lamtez: a typed lambda-calculus compiling to Tezos Michelson VM
 ================================================================
 
 This is a hobby project, primarily intended to re-familiarise myself
@@ -9,11 +9,10 @@ code).
 
 I'm interested in feedbacks anyway, if you play with it.
 
-## Language
+## General considerations on the language
 
-The language is simple, and strongly influenced by ML. It relies as
-much as possible on sum types (equivalent to tagged unions in C) and
-product types (structs/records in other languages).
+The language is strongly influenced by ML: very functional, relying
+heavily on sum-types and product-types, statically typed with type inference.
 
 Whitespaces are not significant except to separate tokens, indentation
 is not significant, comments start with a `#` sign and run until the
@@ -27,7 +26,7 @@ offer higher-level features:
   and products with more than two fields have to be encoded with nested
   alternatives and pairs, thus quickly becoming hard to read for humans.
 
-* usual variables and scopes: keeping track of what is at which level
+* lexically scoped variables: keeping track of what is at which level
   of the stack is cumbersome when writing a program, it makes reading
   someone else's contracts dreadful. Being able to name things rather
   than shuffling them on a stack greatly improves contract readability.
@@ -35,13 +34,13 @@ offer higher-level features:
 * actual function closures (NOT YET IMPLEMENTED): a function can
   use variables declared outside of it.
 
-* type inference: as many ML dialects, lamtez uses a variant of the
-  W algorithm to deduce types with very little user annotations. However,
+* type inference: as most ML dialects, lamtez uses a variant of the
+  W algorithm to guess types with very little user annotations. However,
   contrary to ML, it expects the final contract not to be polymorphic,
   as Michelson doesn't support it. So you might get some "Add more type
-  annotations" errors. Annotating function parameters is sufficient, 
+  annotations" errors. Annotating function parameters is sufficient,
   although often not necessary, to ensure a monomorphic contract type.
-  (inner polymorphic functions are technically possible, but 
+  (inner polymorphic functions are technically possible, but
   NOT YET IMPLEMENTED)
 
 * storage management: instead of manually managing the storage, variables
@@ -56,23 +55,26 @@ offer higher-level features:
   in the storage to save the stack before calling, and restore it after
   it returns.
 
-(note: currently, the stack is saved in a naive mode: the stack isn't pruned
-from values which aren't needed anymore, and stacks with the same signature
-don't share the same slot. This will be improved, eventually)
+(note: currently, the stack is saved rather naively: a big sum type is
+reserved in the storage, one per invocation of `TRANSFER_TOKEN`, and
+the whole stack is saved in it. First the  stack could be pruned before
+saving, as some slots won't be used after the contract call anymore,
+and two invocations with the same stack types above them should share
+their slot)
 
 Lamtez is mostly functional. It has two kinds of side effects: storage
 updates and calls to other contracts. Normally, functional programming
 languages will only let you touch side effects with a ten foot pole
 (although they call that pole a "monad"; wielding a monad towards unfamiliar
-developers seems barely less scary than doing so with an actual ten foot pole).
+developers scares them about as much as doing so with an actual ten foot pole).
 
 Lamtez doesn't explicitly supports monads, but it enforces some (coarser)
-constraints about where side effects are tolerated. Namely, these operations
+constraints about where side effects are accepted. Namely, these operations
 can't happen in an inner function (we couldn't keep track of them without
 monads then), nor in places where evaluation order isn't intuitively
 obvious: not in tuples/products, not in function arguments.
 
-### General organization
+## Anatomy of a contract
 
 A contract is composed of:
 
@@ -94,9 +96,9 @@ A contract is composed of:
   calling other contracts, and updating the content of stored variables.
 
 
-### Expression Syntax
+## Expression Syntax
 
-#### Functions
+### Functions and function applications
 
 In languages inspired by lambda calculus, functions are traditionally
 introduced with a lowercase lambda "λ". Since it's cumbersome to type
@@ -114,7 +116,7 @@ returning functions, a standard idiom in λ-calcullus inspired languages)
 Functions are applied the ML/λ-calculus way, by putting the arguments
 after the function, without parentheses nor separating commas, i.e.
 what's written `f(x, y)` in C-inspired syntaxes is written `f x y`.
-Application is left-associative, i.e. `f x y z` is read as 
+Application is left-associative, i.e. `f x y z` is read as
 `(((f x) y) z)`. Parentheses are still needed for nested function applications,
 e.g `f(g(x), g(y))` in C would give `f (g x) (g y)`.
 
@@ -145,7 +147,26 @@ The barely more interesting one, which adds one to its parameter, is:
 
     \(p :: nat): p+1
 
-#### Variables
+### Literals
+
+Lamtez supports the same literals as Michelson:
+
+* to distinguish naturals from positive integers, the later have to
+  be prefixed with a `+` sign, so `42` is a natural number and `+42`
+  is typed as an integer.
+
+* dates are represented with the ISO format, without surrounding quotes:
+  `2017-08-22T22:00:00Z`, `2017-08-22T22:00:00+01:00`
+
+* Tez amounts are represented with a `tz` prefix and optional cents:
+  `tz1`, `tz1.00`, `tz.05` (TODO: support `_` characters). If there are
+  cents, they must be two digits long: `tz0.`, `tz0.1` or `tz.100` are illegal.
+
+* Signatures are represented with a `sig:` prefixing the base58 hash TODO
+
+* Keys are represented with a `key:` prefixing the base58 hash TODO
+
+### Variables
 
 Variable names must start with a lowercase letter or an underscore;
 they are allowed to contain a `-`: this is currently used to sort
@@ -157,18 +178,25 @@ Examples: `foo, bar0, contract-call, _foo, foo_bar, fooBar`
 (In the future I might get rid of dashes in names, if there's a decent
 namespace system instead)
 
-#### Let: local variables
+### Let: local variables
 
 ML-style local variables, `let x=a; b` evaluates `b` with `x` set to `a`.
 Equivalent, execution-wise, to `(\x:b) a`.
-
 Example:
 
     let x = 32;
     let y = 10;
     x + y
 
-#### Tuples (unlabelled cartesian products)
+Lamtez being mostly functional, you can't update the value stored in a
+variable; however, and as often done in ML dialect, you can shadow a variable
+with a new variable  of the same name:
+
+    let x = 10;
+    let x = 20;  # From here you can't refer to the first `x` variable anymore
+    do_stuff_with x
+
+### Tuples (unlabelled cartesian products)
 
 Whereas Michelson supports pairs, Lamtez supports tuples of length
 bigger than 2 (and encodes them as nested pairs). Such tuples are
@@ -183,31 +211,29 @@ Tuples are encoded as balanced trees, i.e. so that the length of paths in
 
 Example:
 
-```
-let triplet = (32, 5, 5);
-triplet.0 + triplet.1 + triplet.2
-```
+    let triplet = (32, 5, 5);
+    triplet.0 + triplet.1 + triplet.2
 
-#### (labelled) Cartesian products
+### (labelled) Cartesian products
 
-For larger composite structures, it's easier to refer to individual
-elements by user-given names, rather than by number. This requires to declare a
-product type before using it.  Labels are like identifiers except that
-they start with a capital letter.
+For larger composite structures, it's easier to refer to individual elements
+by user-given names, rather than by number. This requires to declare a product
+type before using it. Labels are like identifiers except that they start with
+a capital letter.
 
 Type declarations happen at the beginning of the contract (cf. infra);
-labelled product types are sequences of labels and types separated by
-`*` symbols.
+labelled product types are sequences of labels and types separated by `*`
+symbols.
 
-Litteral product types are sequences of labels and types, separated by
-commas and surrounded by braces.
+Litteral product types are sequences of labels and types, separated by commas
+and surrounded by braces.
 
-Access to product fields are made with a `.Label` suffix, which binds
-as tightly as unlabelled product accessors.
+Access to product fields are made with a `.Label` suffix, which binds as
+tightly as unlabelled product accessors.
 
-Finally, one can generate a product from another: a product which is
-equal to `p` except that field `F` has value `42` can be created
-through the syntax `p.F<-42`.
+Finally, one can generate a product from another: a product which is equal to
+`p` except that field `F` has value `42` can be created through the syntax
+`p.F<-42`.
 
 Example:
 
@@ -223,71 +249,73 @@ Example:
 
     (p, p_2_degrees_north, p_south_west)
 
-#### Sum types
+### Sum types
 
-Equivalent of labelled unions, they are a generalization of the
-`Left|Right` Michelson operators with an arbitrary number of labels,
-freely named.
+Equivalent of labelled unions, they are a generalization of the `Left|Right`
+Michelson operators with an arbitrary number of labels, freely named.
 
-Types have to be declared; they are declared the same way as products,
-except that cases are separated with `+` instead of `*`.
+Types have to be declared; they are declared the same way as products, except
+that cases are separated with `+` instead of `*`.
 
-A label can only belong to one sum type; for instance, it's illegal
-to have both `type a = A: int + B: string` and `type b = A: int + C: bool`.
+A label can only belong to one sum type; for instance, it's illegal to have
+both `type a = A: int + B: string` and `type b = A: int + C: bool`.
 
-Each case has one and only one associated value type. Make it a `unit` if
-you don't use it, make it a tuple or a product if you need several values.
+Each case has one and only one associated value type. Make it a `unit` if you
+don't use it, make it a tuple or a product if you need several values.
 Syntactically, unit arguments can be omitted, though.
 
-Sum expressions are built with a label followed by an expression. It
-binds as tightly as a function application.
+Sum expressions are built with a label followed by an expression. It binds as
+tightly as a function application.
 
-Sum accessors, equivalent to ML's `match/with` or Michelson
-`IF_LEFT`, are of the form 
-`expression ? Label_0 v_0: e_0 |... | Label_n v_n: e_n`.
-As in ML, an optional `|` is tolerated after the `?`. the variables 
-`v_n` can be omitted when they're not used in the corresponding `e_n`.
-In sum cases, unit values can be omitted too.
+Sum accessors, equivalent to ML's `match/with` or Michelson `IF_LEFT`, are of
+the form `case expression | Label_0 v_0: e_0 |... | Label_n v_n: e_n`. the
+variables `v_n` can be omitted when they're not used in the corresponding
+`e_n`. In sum cases, unit values can be omitted too.
 
-Booleans are encoded as `type bool = False unit | True unit`, so
-if/then/else operations should be encoded as sum accessors, as shown
-in the example below.
+Booleans are encoded as `type bool = False unit | True unit`, so if/then/else
+operations should be encoded as sum accessors, as shown in the example below.
 
-option types and `Left/Right` alternatives are also predeclared as 
-sum types, as well as list constructors `Nil/Cons`. 
+Option types `Some x + None`, binary alternatives `Left/Right` and list
+constructors `Nil/Cons` are also predeclared as sum types.
 
 Examples:
 
     type operation = Withdrawal tez + GetBalance unit + Deposit tez
     \amount operation storage:
-      ( operation ?
+      ( case operation
       | Withdrawal a: (None, storage - a)
-      | GetBalance: (Some storage, storage)
-      | Deposit: (None, storage + a)
+      | GetBalance:   (Some storage, storage)
+      | Deposit:      (None, storage + a)
       )
 
     self-now > date ? True: "OK" | False: "Not yet"
 
-#### Binary and unary operators
+Some syntax sugar is proposed for boolean cases, which allows to chain several
+`if / then / else if * / else` statements:
+
+* `(if <cond>: <body0>)` is equivalent to
+  `(case <cond> | True: <body0> | False: ())`.
+
+* `(if <cond>: <body0> | else: <body1>)` is equivalent to
+  `(case <cond> | True: <body0> | False: <body1>)`.
+
+* `(if <cond_0>: <body_0> | ... | <cond_n>: <body_n> else: <body_e>)`
+  is equivalent to nested if/then/elseif statements:
+
+    ( case <cond_0>
+    | True: <body_0>
+    | False: ( case <cond_1>
+             | True: <body_1>
+             | False: ( case <cond_2>
+                      | ...
+                      | False: <body_e>)...))
+
+### Binary and unary operators
 
 TODO
 
-#### Literals
 
-Lamtez supports the same literals as Michelson:
-
-* to distinguish naturals from positive integers, the later have to
-  be prefixed with a `+` sign, so `42` is a natural number and `+42`
-  is typed as an integer.
-* dates are represented with the ISO format, without surrounding quotes: 
-  `2017-08-22T22:00:00Z`, `2017-08-22T22:00:00+01:00` 
-* Tez amounts are represented with a `tz` prefix and optional cents: 
-  `tz1`, `tz1.00`, `tz.05` (TODO: support `_` characters). If there are
-  cents, they must be two digits long: `tz0.`, `tz0.1` or `tz.100` are illegal.
-* Signatures are represented with a `sig:` prefixing the base58 hash TODO
-* Keys are represented with a `key:` prefixing the base58 hash TODO
-
-#### Composite values
+### Composite values
 
 There are native syntaxes to enter lists, sets and maps:
 
@@ -297,37 +325,40 @@ There are native syntaxes to enter lists, sets and maps:
 
 Lists can also be built out of `Cons` and `Nil` sum types.
 
-#### Type annotations
+### Type annotations
 
 Expressions can be annotated with their types, with the `::` infix operator.
 It serves several purposes: compiler-checked hint for contract readers,
 helping the compiler resolve a polymorphic type, or helping it produce a more
 precise error message when facing an unsound program.
 
-#### Storage
+### Storage
 
-Michelson contracts have a storage value; it is stored on the blockchain, passed as a parameter
-to contracts when they execute, and contracts return an updated storage object which is stored back on
-the blockchain.
+Michelson contracts have a storage value; it is stored on the blockchain,
+passed as a parameter to contracts when they execute, and contracts return an
+updated storage object which is stored back on the blockchain.
 
 As non-trivial programs often store multiple values, the store is generally a
 product type. Since Lamtez might need to store additional fields in the store,
-contract developpers are expected to declare and use the field they need through
-a dedicated `@` syntax:
+contract developpers are expected to declare and use the field they need
+through a dedicated `@` syntax:
 
-* a sequence of `@name :: type` declarations after type declarations declare every storage
-  field type and name;
-* optionally, a value can be associated, e.g. `@n :: nat = 42`. If all stored values have
-  such an initial value, a data initializer can be extracted from the contract, and passed
-  to the tezos client.
+* a sequence of `@name :: type` declarations after type declarations declare
+  every storage field type and name;
+
+* optionally, a value can be associated, e.g. `@n :: nat = 42`. If all stored
+  values have such an initial value, a data initializer can be extracted from
+  the contract, and passed to the tezos client.
+
 * in the code, `@name` returns the current content of field `name`.
+
 * fields can be updated with the syntax `@name <- expr`.
 
-Storage fields cannot be updated anywhere: you can't update them inside functions, in tuple
-or product elements, in function arguments. 
+Storage fields cannot be updated anywhere: you can't update them inside
+functions, in tuple or product elements, in function arguments.
 
-If you want to update them inside a function, make the function return the updated value
-and perform the update from outside:
+If you want to update them inside a function, make the function return the
+updated value and perform the update from outside:
 
     @n :: int
 
@@ -336,9 +367,9 @@ and perform the update from outside:
 
     let f = \(x :: int): x + 1;
     @n <- f 3 # Legal
-    
-Instead of performing storage updates in function arguments or products, perform them before
-in a `let` expression.
+
+Instead of performing storage updates in function arguments or products,
+perform them before in a `let` expression.
 
 
 ### Type syntax
@@ -349,10 +380,10 @@ Label_0 field_type_0 * ... * Label_n field_type_n`, and sum types
 `type name = Label_0: case_type_0 * ... * Label_n: case_type_n`. Type
 aliases can also be created, with the notation `type name = type`.
 
-Type can be polymorphic, i.e. take type parameters. Beware, however,
-that since Michelson is not polymorphic, some valid Lamtez programs
-will be rejected by the compiler. Type parameters are passed between
-the name and the `=` sign. Lists are encoded that way in Lamtez.
+Type can be polymorphic, i.e. take type parameters. Beware, however, that
+since Michelson is not polymorphic, some valid Lamtez programs will be
+rejected by the compiler. Type parameters are passed between the name and the
+`=` sign. Lists are encoded that way in Lamtez.
 
 Examples:
 
@@ -363,25 +394,27 @@ Examples:
 
 Type annotations can be the following:
 
-* an identifier, i.e. the name of an alias, a sum type, a product type
-  or a primitive.
-* if an identifier is polymorphic, as the `option` example above, it
-  must receive the corresponding number of parameters after it. For
-  instance, `nat` is a valid type, so is `list int` or `list (pair
-  string int)`, but `list` or `pair int` are not valid.
+* an identifier, i.e. the name of an alias, a sum type, a product type or a
+  primitive.
+
+* if an identifier is polymorphic, as the `option` example above, it must
+  receive the corresponding number of parameters after it. For instance, `nat`
+  is a valid type, so is `list int` or `list (pair string int)`, but `list` or
+  `pair int` are not valid.
+
 * Tuples are represented as types, separated with `*` and surrounded by
   parentheses, e.g. `(int * int)` or `(int*list a*tez)`.
-* functions types are denoted `parameter_type -> result_type`. The
-  arrow is right associative, and multi-parameter functions are
-  encoded as curried (nested) lambda terms. For instance, a function
-  from two ints to a string has type `int -> int -> string`.
+
+* functions types are denoted `parameter_type -> result_type`. The arrow is
+  right associative, and multi-parameter functions are encoded as curried
+  (nested) lambda terms. For instance, a function from two ints to a string
+  has type `int -> int -> string`.
 
 ### Contracts
 
-A contract with parameter type `p`, and result type
-`r` is represented in a file as a sequence of type declarations,
-then a sequence of store field declarations, then an expression 
-of type `p -> r`. The
+A contract with parameter type `p`, and result type `r` is represented in a
+file as a sequence of type declarations, then a sequence of store field
+declarations, then an expression of type `p -> r`. The
 
 
 Example:
@@ -414,6 +447,50 @@ enforced by Michelson to make some classes of error harder to write:
 It cannot be in a function, and no variable existing before the call
 canbe used after.
 
-```
-contract-call: ∀ param result: contract param result → param → tez  → result
-```
+    contract-call: ∀ param result: contract param result → param → tez  → result
+
+#### Other primitives TODO
+
+    type zero     = (+)
+    type unit     = (*)
+    type option a = None+Somea
+    type bool     = False + True
+    type list a   = Nil + Cons (a * (list a))
+    type account  = (contract unit unit)
+
+    val contract-call           :: ∀ param result:
+        contract param result -> param -> tez -> result
+    val contract-create         :: ∀ param storage result:
+        key -> option key -> bool -> bool -> tez -> 
+        (param * storage) -> (result * storage) -> storage -> contract param result
+    val contract-create-account :: key -> option key -> bool -> tez -> account
+    val contract-get            :: key -> account
+    val contract-manager        :: ∀ param storage: contract param storage -> key
+
+    val crypto-check :: key -> sig -> string -> bool
+    val crypto-hash  :: ∀ a: a -> string
+
+    val fail :: fail
+
+    val list-map    :: ∀ a b: (a -> b) -> list a -> list b
+    val list-reduce :: ∀ a acc: (a -> acc -> acc) -> list a -> acc -> acc
+
+    val map-empty  :: ∀ k v: map k v
+    val map-get    :: ∀ k v: k -> map k v -> option v
+    val map-map    :: ∀ k v0 v1: (k -> v0 -> v1) -> map k v0 -> map k v1
+    val map-mem    :: ∀ k v: k -> map k v -> bool
+    val map-reduce :: ∀ k v acc: (k -> v -> acc -> acc) -> map k v -> acc -> acc
+    val map-update :: ∀ k v: k -> option v -> map k v -> map k v
+
+    val self-amount         :: tez
+    val self-balance        :: tez
+    val self-contract       :: ∀ param result: contract param result
+    val self-now            :: time
+    val self-source         :: ∀ param result: contract param result
+    val self-steps-to-quota :: nat
+
+    val set-empty  :: ∀ elt: set elt
+    val set-map    :: ∀ a b: (a -> b) -> set a -> set b
+    val set-mem    :: ∀ elt: set elt -> elt -> bool
+    val set-reduce :: ∀ elt acc: (elt -> acc -> acc) -> set elt -> acc -> acc
+    val set-update :: ∀ elt: elt -> bool -> set elt
