@@ -365,8 +365,8 @@ non-standardized financial contract. Here's its Lamtez transcription:
         ( case parameter
         | Delivery _: fail
         | Payment whom: (if whom != "buyer": fail);
-                        let paid = @paid_by_B + self-amount;
-                        (if paid > @Q * @K: fail))  # Don't accept too much
+                        @paid_by_B <- @paid_by_B + self-amount;
+                        (if @paid_by_B > @Q * @K: fail))  # Don't accept too much
 
     ### B failed to pay after T+24h => all the money goes to S ###
     | @paid_by_B != @Q * @K:
