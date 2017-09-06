@@ -275,23 +275,33 @@ and compile_ESumCase stk test cases it =
   let stk, code = compile_typed_expr stk test in
   let stk = List.tl stk in (* cases are executed with the test removed from stack. *)
   let sum_type_name = match snd test with I.TSum(Some (name, _), _) -> name | _ -> unsound "Not a sum type" in
+  (* Michelson refuses the  `DIP { DROP }` fragments after a `FAIL`: `FAIL` must be last in its sequence.
+   * This function only generates the `DIP { DROP }` if the body isn't a `FAIL`. *)
+  let remove_unless_fail body var_name = match body with
+  | I.EId("fail"), _ -> "" (* TODO check variable capture. *)
+  | _ -> sprintf "DIP { DROP } # Remove %s\n" var_name
+  in
   match sum_type_name, cases with
   | "bool", [(_, _, if_false); (v, _, if_true)] ->
     let _, if_false = compile_typed_expr stk if_false in
     let _, if_true = compile_typed_expr (stk) if_true in
     (item_s "if" it)::stk, sprintf "%sIF { %s}\n{ %s}" code if_true if_false (* TODO make sure unit-bound variables in cases aren't used *)
   | "list", [(_, _, if_nil); (v, t_v, if_cons)] ->
-    let _, if_cons = compile_typed_expr ((item_s "CONS" it)::stk) if_cons in
-    let _, if_nil = compile_typed_expr stk if_nil in
-    (item_s "if_cons" it)::stk, sprintf "%sIF_CONS { PAIR; # %s\n %sDIP { DROP }# remove cons\n}\n{ %s}" code v if_cons if_nil
+    let _, if_cons_code = compile_typed_expr ((item_s "CONS" it)::stk) if_cons in
+    let _, if_nil_code = compile_typed_expr stk if_nil in
+    (item_s "if_cons" it) :: stk, 
+    sprintf "%sIF_CONS { PAIR; # %s\n %s%s}\n{ %s}"
+    code v if_cons_code if_nil_code (remove_unless_fail if_cons "cons")
   | "option", [(_, _, if_none); (v, t_v, if_some)] ->
-    let _, if_some = compile_typed_expr ((item_v v t_v)::stk) if_some in
-    let _, if_none = compile_typed_expr stk if_none in
-    (item_s "if_none" it)::stk, sprintf "%sIF_NONE { %s}\n{ # %s\n %sDIP { DROP } # remove %s\n}" code if_none v if_some v
+    let _, if_some_code = compile_typed_expr ((item_v v t_v)::stk) if_some in
+    let _, if_none_code = compile_typed_expr stk if_none in
+    (item_s "if_none" it)::stk, 
+    sprintf "%sIF_NONE { %s}\n{ # %s\n%s%s}" code if_none_code v if_some_code
+    (remove_unless_fail if_some v)
   | _ -> (* User-defined sum type *)
     let f i (v, t_v, ie)  =
-      sprintf "# | <%d>(%s):\n%sDIP { DROP }; # remove %s\n"
-        i v (snd (compile_typed_expr ((item_v v t_v)::stk) ie)) v in
+      let code = snd (compile_typed_expr ((item_v v t_v)::stk) ie) in
+      sprintf "# | <%d>(%s):\n%s%s" i v code (remove_unless_fail ie v) in
     (item_s (sprintf "sum<%d>" (List.length cases)) it)::stk, code ^ Compile_composite.sum_case (List.mapi f cases)
 
 let patch_stack_store_operations code =
