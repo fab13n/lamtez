@@ -42,6 +42,7 @@ type expr =
   | EId     of loc * evar
   | ELambda of loc * evar * scheme * expr
   | ELet    of loc * evar * etype * expr * expr (* TODO type should be a scheme for consistency *)
+  | ESequence of loc * expr list
   | EApp    of loc * expr * expr
 
   | ETuple    of loc * expr list
@@ -79,7 +80,7 @@ let loc_of_expr = function
 | EApp(loc, _, _) | ETuple(loc, _) | ETupleGet(loc, _, _) | EProduct(loc, _)
 | EProductGet(loc, _, _) | EProductSet(loc, _, _, _) | EStoreSet(loc, _, _, _)
 | ESum(loc, _, _) | ESumCase(loc, _, _) | EBinOp(loc, _, _, _) | EUnOp(loc, _, _)
-| ETypeAnnot(loc, _, _) -> loc
+| ETypeAnnot(loc, _, _) | ESequence(loc, _) -> loc
 
 let loc_of_etype = function
 | TId(loc, _) | TLambda(loc, _, _) | TTuple(loc, _) | TApp(loc, _, _) -> loc
@@ -88,6 +89,15 @@ let loc_of_etype = function
 let loc_of_decl = function
 | DProduct(loc, _, _, _) | DSum(loc, _, _, _)
 | DAlias(loc, _, _, _) | DPrim(loc, _, _) -> loc
+
+let fresh_var =
+  let fresh_var_counter = ref 0 in
+  fun ?prefix:(prefix="") () ->
+    incr fresh_var_counter;
+    prefix ^ "%" ^ string_of_int !fresh_var_counter
+
+let fresh_tvar ?prefix:(prefix="") () = TId(noloc, fresh_var ~prefix ())
+let fresh_evar ?prefix:(prefix="") () = EId(noloc, fresh_var ~prefix ())
 
 let noloc = None
 
@@ -126,23 +136,30 @@ let esum ?(loc=noloc) id args =
     let loc = loc2e (List.hd list) (List.hd (List.rev list)) in
     etuple ~loc list in
   ESum(loc, id, arg) 
-
 let eapp = function [] -> assert false | f :: args ->
   let l1 = loc_of_expr f in
   let fold acc arg =
     let loc = loc2 l1 (loc_of_expr arg) in
     EApp(loc, acc, arg) in
   List.fold_left fold f args
-
-
-let fresh_var =
-  let fresh_var_counter = ref 0 in
-  fun ?prefix:(prefix="") () ->
-    incr fresh_var_counter;
-    prefix ^ "%" ^ string_of_int !fresh_var_counter
-
-let fresh_tvar ?prefix:(prefix="") () = TId(noloc, fresh_var ~prefix ())
-let fresh_evar ?prefix:(prefix="") () = EId(noloc, fresh_var ~prefix ())
+let esequence ?(loc=noloc) l = ESequence(loc, l)
+let eif ?(loc=noloc) list = (* TODO handle locs better *)
+  let rec f = function
+    | [cond, body_then; ESum(_, "True", _), body_else] -> 
+      ESumCase(loc, cond, 
+               ["True", (fresh_var(), body_then);
+                "False",(fresh_var(), body_else)])
+    | [cond, body] -> 
+      ESumCase(loc, cond, 
+               ["True", (fresh_var(), body);
+                "False",(fresh_var(), eunit)])
+    | (cond, body_then) :: rest -> 
+      ESumCase(loc, cond, 
+               ["True", (fresh_var(), body_then);
+                "False",(fresh_var(), f rest)])
+    | [] -> raise (Invalid_argument "eif")
+  in
+  f list 
 
 let fresh_vars, fresh_tvars, fresh_evars =
   let rec f g acc = function 0 -> acc | n -> f g (g()::acc) (n-1) in
@@ -173,6 +190,7 @@ let rec replace_evar var e e' =
   | ELet(loc, var', t, e0, e1) -> ELet(loc, var', t, r e0, r e1)
   | EApp(loc, e0, e1) -> EApp(loc, r e0, r e1)
   | ETuple(loc, list) -> ETuple (loc, List.map r list)
+  | ESequence(loc, list) -> ESequence (loc, List.map r list)
   | ETupleGet(loc, e0, tag) -> ETupleGet(loc, r e0, tag)
   | EProduct(loc, pairs) -> EProduct (loc, List.map (fun (tag, e) -> (tag, r e)) pairs)
   | EProductGet(loc, e0, tag) -> EProductGet(loc, e0, tag)
@@ -198,7 +216,6 @@ let rec replace_tvar var t term =
 let replace_tvars tvars types t = List.fold_left2
     (fun t v t' -> replace_tvar v t' t)
     t tvars types
-
 
 (* Keep track of: EXEC  LOOP EDIV  *)
 (* Units: tez time signature key *)

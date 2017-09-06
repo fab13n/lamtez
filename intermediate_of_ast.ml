@@ -104,6 +104,11 @@ let rec compile_expr ctx e =
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
     I.ELet(id, te0, te1), it1
 
+  | A.ESequence(_, list) ->
+    let fold acc x = I.ELet(Ast.fresh_var(), c x, acc), (snd acc) in
+    let rev_list = List.rev list in
+    List.fold_left fold (c (List.hd rev_list)) (List.tl rev_list)
+
   | A.EApp _ as e ->
     let rec get = function A.EApp(_, f, a) -> let f', args = get f in f', a::args | e -> e, [] in
     let f, rev_args = get e in

@@ -4,9 +4,9 @@
 @when_too_late          :: account
 
 \(p :: unit):
-self-now < @time_threshold ?
-| True: ( self-amount > @amount_threshold ?
-        | True: contract-call @when_threshold_reached () self-balance
-        | False: () # Amount not reach, but not too late yet
-        )
-| False: contract-call @when_too_late () self-balance
+
+( if 
+| self-now < @time_threshold:
+    (if self-amount > @amount_threshold:
+        contract-call @when_threshold_reached () self-balance)
+| else: contract-call @when_too_late () self-balance)

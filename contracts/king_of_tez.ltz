@@ -3,9 +3,9 @@
 @enthronement_cost :: tez
 
 \(parameter :: key):
-( @enthronement_date + 604800 > now or self-amount > @enthronement_cost ?
+( case @enthronement_date + 604800 > self-now or self-amount > @enthronement_cost
 | True: @royal_key <- parameter;
-        @enthronement_date <- now;
+        @enthronement_date <- self-now;
         @enthronement_cost <- self-amount;
         ()
 | False: fail

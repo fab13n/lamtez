@@ -65,6 +65,7 @@ let rec string_of_expr e =
   | ELet(_, v, t, e0, e1) -> "let ("^v^": "^string_of_type t^") = "^soe e0^" in "^soe e1
   | EApp _ as e -> let rec f = function EApp(_, a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
   | ETuple(_, list) -> "(" ^ sep_list ", " soe list ^ ")"
+  | ESequence(_, list) -> "(" ^ sep_list "; " soe list ^ ")"
   | ETupleGet(_, e0, tag) -> soe e0 ^"."^string_of_int tag
   | EProduct(_, pairs) -> "{"^sep_list ", " (fun (tag, e) -> tag^" "^soe e) pairs^"}"
   | EProductGet(_, e0, tag) -> soe e0^"."^tag

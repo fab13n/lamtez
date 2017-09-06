@@ -10,25 +10,25 @@ type sum5 = Int_0_5 int + String_1_5 string + Tez_2_5 tez + Nat_3_5 nat + Bool_4
 @bool   :: bool
 
 \(param :: unit):
-  let x1 = ( Int_0_1 +1 ?
+  let x1 = ( case Int_0_1 (+1)
            | Int_0_1 x: Int_0_1 (x - @nat)
            );
-  let x2 = ( Int_0_2 1 ?
+  let x2 = ( case Int_0_2 1
            | Int_0_2 x: Int_0_2 (x - @nat)
            | String_1_2 x: String_1_2 (x^@string)
            );
-  let x3 = ( Int_0_3 1 ?
+  let x3 = ( case Int_0_3 1
            | Int_0_3 x: Int_0_3 (x - 1)
            | String_1_3 x: String_1_3 (x^"!")
            | Tez_2_3 x: Tez_2_3 (x + tz1.50)
            );
-  let x4 = ( Int_0_4 1 ?
+  let x4 = ( case Int_0_4 1
            | Int_0_4 x: Int_0_4 (x - 1)
            | String_1_4 x: String_1_4 (x^"!")
            | Tez_2_4 x: Tez_2_4 (x + @tez)
            | Nat_3_4 x: Nat_3_4 (x + 1)
            );
-  let x5 = ( Int_0_5 1 ?
+  let x5 = ( case Int_0_5 1
            | Int_0_5 x: Int_0_5 (x - 1)
            | String_1_5 x: String_1_5 (x^"!")
            | Tez_2_5 x: Tez_2_5 (x + tz1.50)

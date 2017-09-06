@@ -44,6 +44,7 @@ let rec typecheck_expr ctx expr =
   | A.EApp(_, f, arg) -> typecheck_EApp ctx f arg
   | A.ETypeAnnot(_, e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
   | A.ETuple(_, exprs) -> let ctx, types = list_fold_map typecheck_expr ctx exprs in ctx, A.TTuple(A.noloc, types)
+  | A.ESequence(_, list) -> typecheck_ESequence ctx list
   | A.ETupleGet(_, e, n) -> typecheck_ETupleGet ctx e n
   | A.EProduct(_, pairs) -> typecheck_EProduct ctx pairs
   | A.EProductGet(_, e, tag) -> typecheck_EProductGet ctx e tag
@@ -92,6 +93,17 @@ and typecheck_ELetIn ctx id t_id e0 e1 =
   let ctx, t1 = typecheck_expr ctx e1 in
   let ctx = Ctx.pop_evar prev ctx in
   ctx, t1
+
+and typecheck_ESequence ctx list =
+  let rlist    = List.rev list in
+  let last     = List.hd rlist in
+  let but_last = List.rev (List.tl rlist) in
+  let fold ctx e =
+    let ctx, t = typecheck_expr ctx e in
+    let ctx, _ = Ctx.unify ctx t A.tunit in
+    ctx in
+  let ctx = List.fold_left fold ctx but_last in
+  typecheck_expr ctx last
 
 and typecheck_EApp ctx f arg =
   let ctx, t_f = typecheck_expr ctx f in
@@ -367,6 +379,7 @@ let check_contract_calls expr =
   | A.ELit _ | A.EId _ -> false
   | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _)       -> f e
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
+  | A.ESequence(_, list)                  -> List.exists f list
   | A.EColl(_, _, list)                   -> forbidden list "collections"
   | A.ELambda(_, "call-contract", _, _)   -> false
   | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
@@ -390,7 +403,8 @@ let check_store_set expr =
   and f = function
   | A.ELit _ | A.EId _ -> false
   | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
-  | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> f e) list
+  | A.ESumCase(_, e, list) -> f e || List.exists (fun (v, (_, e)) -> f e) list
+  | A.ESequence(_, list)                  -> List.exists f list
   | A.EColl(_, _, list)                   -> forbidden list "collections"
   | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"

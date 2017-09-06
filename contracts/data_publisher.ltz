@@ -6,15 +6,8 @@ type operation = option (sig * data)
 @fee  :: tez
 
 \(parameter :: operation):
-( parameter ?
-| None: ( self-amount >= @fee ?
-        | False: fail
-        | True:  @data
-        )
+case parameter
+| None: (if self-amount >= @fee: @data | else: fail)
 | Some signed_data:
   let sig = signed_data.0; let data = signed_data.1;
-  ( crypto-check @key sig data ?
-  | False: fail
-  | True: @data <- data; data
-  )
-)
+  (if crypto-check @key sig data: @data <- data; data | else: fail)

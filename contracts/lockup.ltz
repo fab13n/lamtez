@@ -1,10 +1,8 @@
 @release_date :: time
 @amount       :: tez
-@destination  :: contract unit unit
+@destination  :: account
 
 \(parameter :: unit):
 
-( now >= @release_date ?
-| False: fail
-| True: contract-call @destination () @amount
-)
+(if self-now < @release_date: fail);
+contract-call @destination () @amount

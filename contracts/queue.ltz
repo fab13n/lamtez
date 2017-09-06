@@ -5,16 +5,12 @@ type data = string
 @map :: map nat data
 
 \(parameter :: option data):
-( parameter ?
-| Some data:
-  @map <- map-update @j (Some data) @map;
-  @j <- @j + 1;
-  None
-| None: ( map-get @i @map ?
+( case parameter
+| Some data: @map <- map-update @j (Some data) @map;
+             @j <- @j + 1;
+             None
+| None: ( case map-get @i @map
         | None: None
-        | Some data:
-          @map <- map-update @i None @map;
-          @i <- @i + 1;
-          Some data
-        )
-)
+        | Some data: @map <- map-update @i None @map;
+                     @i <- @i + 1;
+                     Some data))

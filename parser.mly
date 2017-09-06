@@ -28,10 +28,10 @@ let app loc f args =
 %token <int> TUPLE_GET
 %token <string> PRODUCT_GET
 %token LBRACE RBRACE
-%token CASE BAR STORE
+%token BAR STORE
 %token EQ NEQ LE LT GE GT CONCAT
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
-%token TYPE LET
+%token TYPE LET IF CASE ELSE NOT
 %token EOF
 %start <Ast.contract> contract
 
@@ -93,8 +93,15 @@ data_product_pair: tag=TAG COLON? data=data {tag, data}
 expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
-| LAMBDA p=parameter+ COLON e=expr {List.fold_right (fun (pe, pt) acc -> ELambda(loc $startpos $endpos, pe, pt, acc)) p e}
-| LPAREN p=separated_list(COMMA, expr) RPAREN {let loc = loc $startpos $endpos in match p with [] -> eunit_loc loc| [e] -> e | p -> etuple ~loc p}
+| LAMBDA p=parameter+ COLON e=expr_sequence {List.fold_right (fun (pe, pt) acc -> ELambda(loc $startpos $endpos, pe, pt, acc)) p e}
+| LPAREN RPAREN {eunit_loc (loc $startpos $endpos)}
+| LPAREN e=expr RPAREN {e}
+| LPAREN e0=expr COMMA rest=separated_nonempty_list(COMMA, expr) RPAREN {
+  let loc = loc $startpos $endpos in 
+  etuple ~loc (e0::rest) }
+| LPAREN e0=expr SEMICOLON rest=separated_nonempty_list(SEMICOLON, expr) RPAREN {
+  let loc = loc $startpos $endpos in 
+  esequence ~loc (e0::rest) }
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
 | LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
@@ -109,7 +116,8 @@ expr:
   let loc=loc $startpos $endpos in 
   let arg = match e with Some e -> [e] | None -> [] in
   esum ~loc tag arg}
-| e=expr CASE BAR? c=separated_list(BAR, sum_case) {ESumCase(loc $startpos $endpos, e, c)}
+| CASE e=expr BAR c=separated_list(BAR, sum_case) {ESumCase(loc $startpos $endpos, e, c)}
+| IF BAR? c=separated_list(BAR, if_case){let loc=loc $startpos $endpos in eif ~loc c}
 | e=expr TYPE_ANNOT t=etype {ETypeAnnot(loc $startpos $endpos, e, t)}
 (* TODO can put infix operators in a separate rule if it's inlined, to preserve precedences. *)
 | a=expr EQ  b=expr {EBinOp(loc $startpos $endpos, a, BEq, b)}
@@ -129,17 +137,28 @@ expr:
 | a=expr LSR b=expr {EBinOp(loc $startpos $endpos, a, BLsr, b)}
 | a=expr LSL b=expr {EBinOp(loc $startpos $endpos, a, BLsl, b)}
 | MINUS a=expr {EUnOp(loc $startpos $endpos, UNeg, a)}
+| NOT   a=expr {EUnOp(loc $startpos $endpos, UNot, a)}
 
 expr_arg:
 | e=expr0 {e}
 | tag=TAG {esum ~loc:(loc $startpos $endpos) tag []}
-| LPAREN e=expr RPAREN {e}
+/* Why did I put this?! | LPAREN e=expr RPAREN {e} */
+
+expr_sequence: l=separated_nonempty_list(SEMICOLON, expr) {
+  match l with
+  | [e] -> e 
+  | _ -> let loc =loc $startpos $endpos in esequence ~loc l
+}
 
 tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}
 
 sum_case: 
-| tag=TAG COLON expr=expr {(tag, (fresh_var(), expr))}
-| tag=TAG var=ID COLON? expr=expr {(tag, (var, expr))}
+| tag=TAG COLON expr=expr_sequence {(tag, (fresh_var(), expr))}
+| tag=TAG var=ID COLON? expr=expr_sequence {(tag, (var, expr))}
+
+if_case:
+| cond=expr COLON body=expr_sequence {(cond, body)}
+| ELSE COLON? body=expr_sequence {(esum "True" [], body)}
 
 product_pair: tag=TAG COLON? expr=expr {tag, expr}
 

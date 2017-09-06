@@ -8,19 +8,24 @@
 
 \(p :: unit):
 
-let _ = @status != "open" ? True: fail | False: ();
+if
+### If the contract is realized, don't call it again ###
+| @status != "open": fail
 
-self-now < @time_threshold ?
-| True: ( self-balance < tz1.00 + @broker_fee + @amount_threshold ?
-        | True: ()
-        | False: @status <- "success";
-                 let _ = contract-call @broker () @broker_fee;
-                 let _ = contract-call @when_threshold_reached () @amount_threshold;
-                 ())
+### Open after timeout: let's cancel it, pay broker, send the rest to when_too_late ###
+| self-now >= @time_threshold:
+    @status <- "timeout";
+    let available = self-balance - tz1.00;
+    let fee = (if available < @broker_fee: available | else: @broker_fee);
+    contract-call @broker () fee;
+    contract-call @when_too_late () (self-balance - tz1.00)
 
-| False: @status <- "timeout";
-         let available = self-balance - tz1.00;
-         let fee = available < @broker_fee ? True: available | False: @broker_fee;
-         let _ = contract-call @broker () fee;
-         let _ = contract-call @when_too_late () (self-balance - tz1.00);
-         ()
+### Money threshold reached before timeout ###
+| self-balance >= tz1.00 + @broker_fee + @amount_threshold:
+    @status <- "success";
+    contract-call @broker () @broker_fee;
+    contract-call @when_threshold_reached () @amount_threshold
+
+### Before timeout, not enough money yet, wait ###
+| else:
+    ()

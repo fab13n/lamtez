@@ -43,6 +43,9 @@ rule read = parse
 | '#' [^'\r' '\n']* ['\r' '\n'] {read lexbuf}
 | "type" {TYPE}
 | "let" {LET}
+| "if" {IF}
+| "case" {CASE}
+| "else" {ELSE}
 | ';' {SEMICOLON}
 | "<-" {LEFT_ARROW}
 | "\\/" {FORALL}
@@ -60,10 +63,10 @@ rule read = parse
 | '.' tag {PRODUCT_GET(trim lexbuf 1 0)}
 
 | '(' {LPAREN} | ')' {RPAREN} | '\\' {LAMBDA} | "->" {ARROW}
-| ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '?' {CASE} | '|' {BAR}
+| ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}
-| "or" {OR} | "and" {AND} | "xor" {XOR}
+| "or" {OR} | "and" {AND} | "xor" {XOR} | "not" {NOT}
 
 | id {ID(Lexing.lexeme lexbuf)} (* must be after alhabetic keywords *)
 | tag {TAG(Lexing.lexeme lexbuf)}

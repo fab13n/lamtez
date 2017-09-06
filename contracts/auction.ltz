@@ -34,28 +34,22 @@ type bid = Key: key * Refund: contract unit unit
 \(bid::bid):
 
 # Check dates: is the auction still running?
-let _ =
-(self-now > @current_end_date ? True: fail | False: ());
-let _ =
-( @hard_end_date ?
-| Some date: (self-now > date ? True: fail | False: ())
-| None: ()
-);
+(if self-now > @current_end_date: fail);
+( case @hard_end_date
+| Some date: (if self-now > date: fail)
+| None: () );
 
 # Check whether the bid was sufficiently founded
-let _ =
-( self-amount > @current_price + @increment ? False: fail | True: ());
+(if self-amount < @current_price + @increment: fail);
 
 # Recompute @current_end_date
 let new_date = self-now + @raising_delay;
-@current_end_date <- (new_date > @current_end_date ? True: new_date | False: @current_end_date);
+@current_end_date <- (if new_date > @current_end_date: new_date | True: @current_end_date);
 
 # Reimburse previous holder
-let _ =
-( @current_bid ?
-| None: ()
+( case @current_bid
 | Some old_bid: contract-call old_bid.Refund () @current_price
-);
+| None: () );
 
 # Update winning bidder info
 @current_bid   <- Some bid;
