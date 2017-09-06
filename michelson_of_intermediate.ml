@@ -167,12 +167,24 @@ and compile_EColl_CList stk list t_list =
   stk, cc (List.rev (f list))
 
 and compile_EColl_CMap stk list t_map = 
-  let t_k, t_v = match t_map with I.TPrim("list", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
-  not_impl "EColl_CMap"
+  let t_k, t_v = match t_map with I.TPrim("set", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
+  let stk = (item_s "(map ...)"  t_map) :: stk in
+  let rec f = function
+    | [] -> sprintf "EMPTY_MAP %s %s" (compile_etype t_k) (compile_etype t_v)
+    | a :: b -> 
+      let _, c = compile_typed_expr stk a in
+      sprintf "%s; PUSH True; %s; UPDATE" (f b) c
+  in stk, f list
 
 and compile_EColl_CSet stk list t_set = 
   let t_elt = match t_set with I.TPrim("set", [t_elt]) -> t_elt | _ -> assert false in
-  not_impl "EColl_CSet"
+  let stk = (item_s "(set ...)"  t_set) :: stk in
+  let rec f = function
+    | [] -> "EMPTY_SET "^compile_etype t_elt
+    | a :: b -> 
+      let _, c = compile_typed_expr stk a in
+      sprintf "%s; PUSH True; %s; UPDATE" (f b) c
+  in stk, f list
 
 and compile_ELambda stk params body it_lambda =
   match params, body with

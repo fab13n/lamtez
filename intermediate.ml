@@ -37,7 +37,6 @@ and expr =
 | EProductSet of typed_expr * int * int * typed_expr
 | EStoreSet of int * typed_expr * typed_expr
 | ESumCase of typed_expr * (evar * etype * typed_expr) list
-(* TODO add support for options and lists? *)
 
 type store = (int * etype) list
 

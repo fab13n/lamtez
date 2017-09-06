@@ -166,4 +166,4 @@ parameter:
 | id=ID {id, ([], fresh_tvar ~prefix:id ())}
 | LPAREN id=ID TYPE_ANNOT t=scheme RPAREN {(id, t)}
 (* TODO support for irrefutable pattern (products and tuples),
- * by generating a LetIn(...) functor to apply to function/letin body. *)
+ * by generating an ELet(...) functor to apply to function/letin body. *)

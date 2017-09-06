@@ -106,7 +106,6 @@ let sum_make i types =
   in
   let code = f [] (Tree.t_of_types types) path in
   cc code
-  (* TODO List.rev? *)
 
 (* Generates the nested `IF_LEFT{ }{ }` operators which will run the code in cases
  * on alternatives of the proper case. 
@@ -184,7 +183,6 @@ let product_set i n =
       (cc (List.rev undo)) i n (cc redo)
 
 (* Generates code which splits a product, i.e. pushes all of its elements in order on the stack
- * (TODO first on top or first on bottom ?)
  *)
 let product_split n =
   let part_and_trim x =

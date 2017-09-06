@@ -8,7 +8,7 @@ let noloc = None
 type etype =
   | TId     of loc * tvar
   | TLambda of loc * etype * etype
-  | TTuple  of loc * etype list (* TODO encode as TApp("tupleN", list) *)
+  | TTuple  of loc * etype list (* TODO encode as TApp("tuple-N", list)? *)
   | TApp    of loc * tvar * etype list
   | TFail
 
@@ -40,7 +40,7 @@ type expr =
   | ELit    of loc * literal
   | EColl   of loc * collection_kind * expr list
   | EId     of loc * evar
-  | ELambda of loc * evar * scheme * expr
+  | ELambda of loc * evar * scheme * expr (* TODO optional result annotation *)
   | ELet    of loc * evar * etype * expr * expr (* TODO type should be a scheme for consistency *)
   | ESequence of loc * expr list
   | EApp    of loc * expr * expr
@@ -122,7 +122,7 @@ let ttuple ?(loc=noloc) list = match list with
 | list -> TTuple(loc, list)
 
 let eid ?(loc=noloc) id = EId(loc, id)
-let eunit_loc ~loc = ETuple(loc, []) (* TODO Should be tuple *)
+let eunit_loc ~loc = ETuple(loc, [])
 let eunit = eunit_loc noloc
 let etuple ?(loc=noloc) list = match list with
   | [] -> eunit_loc ~loc

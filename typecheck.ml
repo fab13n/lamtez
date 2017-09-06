@@ -64,15 +64,37 @@ let rec typecheck_expr ctx expr =
   ctx, t
 
 and typecheck_EColl_CList ctx elts =
-  let ctx, types = list_fold_map typecheck_expr ctx elts in 
-  ctx, A.TApp(A.noloc, "list", types)
+  let fold (ctx, t0) elt =
+    let ctx, t1 = typecheck_expr ctx elt in
+    Ctx.unify ctx t0 t1
+  in
+  let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
+  ctx, A.TApp(A.noloc, "list", [elt_type])
 
 and typecheck_EColl_CMap ctx elts =
-  not_impl "EColl_CMap"
+  let rec split (klist, vlist) = function
+  | k :: v :: rest -> split (k :: klist, v :: vlist) rest
+  | [] -> (klist, vlist)
+  | [_] -> assert false
+  in
+  let klist, vlist = split ([], []) elts in
+  let ctx, types = list_fold_map typecheck_expr ctx elts in 
+  let ctx, types = list_fold_map typecheck_expr ctx elts in 
+  let fold (ctx, t0) elt =
+    let ctx, t1 = typecheck_expr ctx elt in
+    Ctx.unify ctx t0 t1
+  in
+  let ctx, k_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"key" ()) klist in
+  let ctx, v_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"val" ()) vlist in
+  ctx, A.TApp(A.noloc, "map", [k_type; v_type])
 
 and typecheck_EColl_CSet ctx elts =
-  let ctx, types = list_fold_map typecheck_expr ctx elts in 
-  ctx, A.TApp(A.noloc, "set", types)
+  let fold (ctx, t0) elt =
+    let ctx, t1 = typecheck_expr ctx elt in
+    Ctx.unify ctx t0 t1
+  in
+  let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
+  ctx, A.TApp(A.noloc, "set", [elt_type])
 
 and typecheck_ELambda ctx id scheme e =
   if fst scheme <> [] then unsupported "parametric parameter types";

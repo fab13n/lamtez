@@ -214,4 +214,4 @@ let rec unify ctx t0 t1 =
     let ctx, c = list_fold_map2 unify ctx a b in
     ctx, A.TTuple(A.noloc, c)
   | _ -> type_error A.noloc ("Not unifiable: "^P.string_of_type t0^" and "^P.string_of_type t1)
-  (* TODO I really need locations here! maybe passed as explicit arg. *)
+  (* TODO add locations to msg. *)
