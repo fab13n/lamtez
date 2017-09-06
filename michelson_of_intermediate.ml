@@ -156,34 +156,33 @@ and compile_primitive stk name args t_result =
     | _ -> not_impl ("Primitive "^name^" not implemented")
 
 and compile_EColl_CList stk list t_list =
-  let t_elt = match t_list with I.TPrim("list", [t_elt]) -> t_elt | _ -> assert false in
+  let t_elt = match t_list with I.TSum((Some("list", [t_elt]), lazy _)) -> t_elt | _ -> assert false in
   let stk = (item_s "(list ...)"  t_list) :: stk in
   let rec f = function
-    | [] -> ["NIL "^compile_etype t_elt]
+    | [] -> sprintf "NIL %s;\n" (compile_etype t_elt)
     | a :: b -> 
-      let _, c = compile_typed_expr stk a in
-      "CONS" :: c :: f b
+       sprintf "%s%sCONS;\n" (f b) (snd @@ compile_typed_expr stk a) 
   in
-  stk, cc (List.rev (f list))
+  stk, f list
 
 and compile_EColl_CMap stk list t_map = 
-  let t_k, t_v = match t_map with I.TPrim("set", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
+  let t_k, t_v = match t_map with I.TPrim("map", [t_k; t_v]) -> t_k, t_v | _ -> assert false in
   let stk = (item_s "(map ...)"  t_map) :: stk in
   let rec f = function
-    | [] -> sprintf "EMPTY_MAP %s %s" (compile_etype t_k) (compile_etype t_v)
-    | a :: b -> 
-      let _, c = compile_typed_expr stk a in
-      sprintf "%s; PUSH True; %s; UPDATE" (f b) c
+    | [] -> sprintf "EMPTY_MAP %s %s;\n" (compile_etype t_k) (compile_etype t_v)
+    | [_] -> assert false
+    | k :: v :: rest -> 
+      sprintf "%s%sSOME;\n%sUPDATE;\n" (f rest) (snd @@ compile_typed_expr stk v) (snd @@ compile_typed_expr stk k)
   in stk, f list
 
 and compile_EColl_CSet stk list t_set = 
   let t_elt = match t_set with I.TPrim("set", [t_elt]) -> t_elt | _ -> assert false in
   let stk = (item_s "(set ...)"  t_set) :: stk in
   let rec f = function
-    | [] -> "EMPTY_SET "^compile_etype t_elt
+    | [] -> sprintf "EMPTY_SET %s;\n" (compile_etype t_elt)
     | a :: b -> 
       let _, c = compile_typed_expr stk a in
-      sprintf "%s; PUSH True; %s; UPDATE" (f b) c
+      sprintf "%sPUSH bool True;\n%sUPDATE;\n" (f b) c
   in stk, f list
 
 and compile_ELambda stk params body it_lambda =

@@ -63,7 +63,7 @@ rule read = parse
 | ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}
-| "or" {OR} | "and" {AND} | "xor" {XOR} | "not" {NOT}
+| "||" {OR} | "&&" {AND} | "^^" {XOR} | "not" {NOT}
 
 | id {ID(Lexing.lexeme lexbuf)} (* must be after alhabetic keywords *)
 | tag {TAG(Lexing.lexeme lexbuf)}
