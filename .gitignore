@@ -5,3 +5,6 @@
 .#*
 _build/
 *.tz
+main.native
+.vscode/launch.json
+notes.md
