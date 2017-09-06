@@ -102,6 +102,9 @@ expr0:
 | LPAREN e0=expr SEMICOLON rest=separated_nonempty_list(SEMICOLON, expr) RPAREN {
   let loc = loc $startpos $endpos in 
   esequence ~loc (e0::rest) }
+| LPAREN CASE e=expr BAR c=separated_list(BAR, sum_case) RPAREN {ESumCase(loc $startpos $endpos, e, c)}
+| LPAREN IF BAR? c=separated_list(BAR, if_case) RPAREN {let loc=loc $startpos $endpos in eif ~loc c}
+
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
 | LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
@@ -110,14 +113,14 @@ expr0:
 | STORE s=tag_or_id  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
 | STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
 
+
+
 expr:
 | f=expr0 args=expr_arg* { app (loc $startpos $endpos) f args }
 | tag=TAG e=expr0? {
   let loc=loc $startpos $endpos in 
   let arg = match e with Some e -> [e] | None -> [] in
   esum ~loc tag arg}
-| CASE e=expr BAR c=separated_list(BAR, sum_case) {ESumCase(loc $startpos $endpos, e, c)}
-| IF BAR? c=separated_list(BAR, if_case){let loc=loc $startpos $endpos in eif ~loc c}
 | e=expr TYPE_ANNOT t=etype {ETypeAnnot(loc $startpos $endpos, e, t)}
 (* TODO can put infix operators in a separate rule if it's inlined, to preserve precedences. *)
 | a=expr EQ  b=expr {EBinOp(loc $startpos $endpos, a, BEq, b)}

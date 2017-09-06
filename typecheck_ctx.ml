@@ -204,8 +204,8 @@ let rec unify ctx t0 t1 =
     let ctx, t0 = unify ctx t00 t10 in
     let ctx, t1 = unify ctx t01 t11 in
     ctx, A.TLambda(A.noloc, t0, t1)
-  | A.TApp(_, "nat", []), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TApp(_, "nat", []) ->
-    ctx, A.TApp(A.noloc, "nat", [])
+  (* | A.TApp(_, "nat", []), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TApp(_, "nat", []) ->
+    ctx, A.TApp(A.noloc, "nat", []) *)
   | A.TApp(_, name0, args0), A.TApp(_, name1, args1)
     when name0=name1 && List.length args0 = List.length args1 ->
     let ctx, args_u = list_fold_map2 unify ctx args0 args1 in
@@ -214,4 +214,4 @@ let rec unify ctx t0 t1 =
     let ctx, c = list_fold_map2 unify ctx a b in
     ctx, A.TTuple(A.noloc, c)
   | _ -> type_error A.noloc ("Not unifiable: "^P.string_of_type t0^" and "^P.string_of_type t1)
-  (* TODO add locations to msg. *)
+  (* TODO add locations to msg. They must come from exprs, not types. *)

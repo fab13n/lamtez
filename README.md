@@ -310,6 +310,10 @@ Some syntax sugar is proposed for boolean cases, which allows to chain several
                       | ...
                       | False: <body_e>)...))
 
+**Note:** To avoid bugs hidden by indentation, such as 
+[CVE-2014-1266](https://en.wikipedia.org/wiki/Unreachable_code#goto_fail_bug),
+*parentheses are mandatory around `if` and `case` expressions.*
+
 ### Binary and unary operators
 
 TODO

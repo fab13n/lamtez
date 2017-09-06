@@ -7,4 +7,4 @@
 
 let dummy = 123;
 @v2 <- True;
-param or @v2
+param || @v2

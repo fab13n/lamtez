@@ -8,7 +8,7 @@
 
 \(p :: unit):
 
-if
+( if
 ### If the contract is realized, don't call it again ###
 | @status != "open": fail
 
@@ -29,3 +29,4 @@ if
 ### Before timeout, not enough money yet, wait ###
 | else:
     ()
+)

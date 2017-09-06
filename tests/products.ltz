@@ -26,7 +26,7 @@ type prod5 = Int_0_5 int * String_1_5 string * Tez_2_5 tez * Nat_3_5 nat * Bool_
            , String_1_5: @x.String_1_5^"!"
            , Tez_2_5: @x.Tez_2_5 + tz1.50
            , Nat_3_5: @x.Nat_3_5 + 1
-           , Bool_4_5: @x.Bool_4_5 or False
+           , Bool_4_5: @x.Bool_4_5 || False
            };
 
   (x1, x2, x3, x4, x5)

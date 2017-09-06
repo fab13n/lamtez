@@ -29,3 +29,6 @@ sanity:
 
 test: debug native
 	./tests/run-tests.sh
+
+test-contracts: debug native
+	./tests/run-tests.sh contracts

@@ -12,6 +12,7 @@ let ctx = empty
   |> add_prim    "string" []
   |> add_prim    "tez" []
   |> add_prim    "sig" []
+  |> add_sum     "or"  ["a"; "b"] ["Left", tid "a"; "Right", tid "b"]
   |> add_sum     "option" ["a"] ["None", tunit; "Some", tid "a"]
   |> add_sum     "list" ["a"] ["Nil", tunit; "Cons", ttuple[tid "a"; tapp "list" [tid "a"]]]
   |> add_prim    "set" ["a"]

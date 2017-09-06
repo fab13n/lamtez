@@ -7,9 +7,8 @@ type operation = Deposit key + Withdrawal withdrawal
 ( case operation
 | Deposit key:
   let new_balance = ( case map-get key @accounts
-                    | None: self-amount  # Create new account
-                    | Some balance: self-amount + balance  # update existing account
-                    );
+                    | None:         self-amount             # Create new account
+                    | Some balance: self-amount + balance); # update existing account
   @accounts <- map-update key (Some new_balance) @accounts;
   ()
 | Withdrawal w:
@@ -22,11 +21,6 @@ type operation = Deposit key + Withdrawal withdrawal
             | False: fail  # withdrawal denied (insufficient funds)
             | True:  let new_balance = ( case balance = w.Amount
                                        | True: None  # Delete empty account
-                                       | False: Some (balance - w.Amount)  # update account
-                                       );
+                                       | False: Some (balance - w.Amount));  # update account
                     @accounts <- map-update w.Key new_balance @accounts;
-                    contract-call (contract-get w.Key) () w.Amount
-            )
-          )
-  )
-)
+                    contract-call (contract-get w.Key) () w.Amount ))))

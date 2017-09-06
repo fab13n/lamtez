@@ -41,7 +41,7 @@ type parameter = Payment: string + Delivery: nat
 
 let one_day = 24 * 60 * 60;
 
-if
+(if
 ### Between Z and Z+24h, accept collaterals from B and S ###
 | self-now  <  @Z + one_day:
     ( case parameter
@@ -87,3 +87,4 @@ if
 ### S failed to deliver after T+48h => all the money goes to B ###
 | True:
     contract-call @B () self-balance  # Timeout, money goes to B
+)
