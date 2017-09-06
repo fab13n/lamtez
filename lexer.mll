@@ -34,9 +34,6 @@ let timezone = 'Z' | ('+' d d? (':' d d)?)
 let time = d d d d '-' d d '-' d d 'T' d d ':' d d ':' d d timezone
 let b58 = ['1'-'9' 'A'-'H' 'J'-'N' 'P'-'Z' 'a'-'k' 'm'-'z']
 let sig = "sig:" b58+
-let string = '"' [^'"']* '"' (* TODO handle escaped quotes and \r\n *)
-
-(* λ == \;  Λ == /\; ∀ == \/; → == -> *)
 
 rule read = parse
 | white {read lexbuf}
@@ -51,7 +48,7 @@ rule read = parse
 | "\\/" {FORALL}
 | '@' {STORE}
 | "::" {TYPE_ANNOT}
-| string {STRING(trim lexbuf 1 1)}
+| '"' { let buffer = Buffer.create 1 in STRING (string_cont buffer lexbuf) }
 | ('+'|'-') num {INT(int_of_string (Lexing.lexeme lexbuf))}
 | num {NAT(int_of_string (Lexing.lexeme lexbuf))}
 | tz_cents {TEZ(int_of_tz_cents(Lexing.lexeme lexbuf))}
@@ -74,6 +71,27 @@ rule read = parse
 | eof {EOF}
 
 | _ { raise(Lexing_error(Lexing.lexeme_start_p lexbuf))}
+
+and string_cont buffer = parse
+| '"' { Buffer.contents buffer }
+| '\\' (_ as k) { Buffer.add_char buffer '\\'; 
+                  Buffer.add_char buffer k;
+                  string_cont buffer lexbuf }
+| '\n' { failwith "Unterminated string" }
+| eof { raise End_of_file }
+| _ as k { Buffer.add_char buffer k; string_cont buffer lexbuf }
+
+ (* unescaped version; I'd rather store string escaped, as I'll pass them
+  * escaped to the Michelson generator.
+ and  string_cont buffer = parse
+ | '"' { Buffer.contents buffer }
+ | "\\t" { Buffer.add_char buffer '\t'; string_cont buffer lexbuf }
+ | "\\n" { Buffer.add_char buffer '\n'; string_cont buffer lexbuf }
+ | '\\' '"' { Buffer.add_char buffer '"'; string_cont buffer lexbuf }
+ | '\\' '\\' { Buffer.add_char buffer '\\'; string_cont buffer lexbuf }
+ | eof { raise End_of_file }
+ | _ as char { Buffer.add_char buffer char; string_cont buffer lexbuf }
+*)
 
 {
   (* Trailer *)
