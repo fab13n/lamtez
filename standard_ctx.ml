@@ -121,4 +121,9 @@ let ctx = empty
                             tapp "list" [tid "a"];
                             tid "acc";
                             tid "acc"])
-    
+
+
+let operators = ["EQ"; "NEQ"; "LE"; "LT"; "GE"; "GT"; "CONCAT"; "OR"; "AND"; 
+"XOR"; "ADD"; "SUB"; "MUL"; "EDIV"; "LSR"; "LSL"; "NOT"; "NEG"; "ABS"] 
+
+let globals = get_evars ctx @ operators

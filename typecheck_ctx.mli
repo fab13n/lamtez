@@ -33,4 +33,6 @@ val expand_scheme: t -> A.scheme -> A.scheme
 val save_type: A.expr -> A.etype -> t -> t
 val retrieve_type: t -> A.expr -> A.etype
 
+val get_evars: t -> A.evar list
+
 val string_of_t: t -> string

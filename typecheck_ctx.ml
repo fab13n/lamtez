@@ -183,6 +183,9 @@ let list_fold_map2 f acc a_list b_list =
   in
   acc, List.rev rev_c_list
 
+let get_evars ctx =
+  List.map fst @@ StringMap.bindings ctx.evars
+
 let rec unify ctx t0 t1 =
   (* TODO: have a direction, to choose a prefered model for the result and report loc
    * and differenciate nat <: int from int <: nat *)

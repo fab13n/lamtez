@@ -178,6 +178,31 @@ let get_free_tvars t =
       List.fold_left S.union S.empty (List.map f list) in
   S.elements (f t)
 
+let get_free_evars e =
+  let module S = Set.Make(String) in
+  let (+) = S.union
+  and (-) s e = S.remove e s in
+  let rec f = function
+    | EId(_, id) -> S.singleton id
+    | ELit _ -> S.empty
+    | ELambda(_, v, _, e) -> f e - v
+    | ELet(_, v, _, e0, e1) -> f e0 + (f e1 - v)
+    | EColl(_, _, list) | ESequence(_, list) | ETuple(_, list) ->
+      List.fold_left (+) S.empty (List.map f list) 
+    | EApp(_, e0, e1) | EProductSet(_, e0, _, e1)
+    | EStoreSet(_, _, e0, e1) | EBinOp(_, e0, _, e1) -> 
+      f e0 + f e1
+    | ETupleGet(_, e, _) | EProductGet(_, e, _)
+    | ESum(_, _, e) | EUnOp(_, _, e)
+    | ETypeAnnot(_, e, _) -> f e
+    | EProduct(_, list) ->
+      List.fold_left (fun acc (_, e) -> acc + f e) S.empty list
+    | ESumCase(_, e, list) ->
+      let fold acc (_, (v, e)) = acc + (f e - v) in
+      List.fold_left fold S.empty list
+  in
+  S.elements (f e)
+
 let rec replace_evar var e e' =
   let r = replace_evar var e in
   match e' with

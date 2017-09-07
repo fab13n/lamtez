@@ -44,3 +44,32 @@ type contract = {
   storage_type: etype;
   storage_init: typed_expr option;
   code:         typed_expr }
+
+let get_free_evars ?except e =
+  let module S = Set.Make(String) in
+  let (+) = S.union
+  and (-) s e = S.remove e s 
+  and (--) s0 s1 = S.diff s0 s1 in
+  let rec f et = match (fst et) with
+    | EId(id) -> S.singleton id
+    | ELit _ -> S.empty
+    | ELambda(vlist, et0) ->
+      let vset = S.of_list (List.map fst vlist) in
+      f et0 -- vset
+    | ELet(v, et0, et1) -> f et0 + (f et1 - v)
+    | EColl(_, list) | EProduct(list) ->
+      List.fold_left (+) S.empty (List.map f list) 
+    | EApp(et0, args)  -> 
+      List.fold_left (fun acc et -> acc + f et) (f et0) args
+    | EProductSet(et0, _, _,  et1) | EStoreSet(_, et0, et1) -> 
+      f et0 + f et1
+    | EProductGet(et0, _, _)
+    | ESum(_, _, et0) -> f et0
+    | ESumCase(e, list) ->
+      let fold acc (v, _, e) = acc + (f e - v) in
+      List.fold_left fold (f e) list
+  in
+  let set = match except with
+    | None -> f e 
+    | Some exceptions -> f e -- S.of_list exceptions
+  in S.elements set
