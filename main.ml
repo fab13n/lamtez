@@ -72,7 +72,7 @@ let parse_file a =
       print_endline("parsing: error at K."^string_of_int (Lexing.lexeme_start a.input));
       raise Exit
     | Not_impl msg ->
-      print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+      print_endline ("\nNot implemented: "^msg);
       Printexc.print_backtrace stdout;
       raise Exit
   in
@@ -85,7 +85,7 @@ let parse_file a =
         print_endline ("\n"^Ast.string_of_loc loc^": "^msg);
         raise Exit
       | Not_impl msg ->
-        print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+        print_endline ("\nNot implemented: "^msg);
         Printexc.print_backtrace stdout;
         raise Exit
     in
@@ -119,7 +119,7 @@ let parse_file a =
               close_out data_file;
               log("Initialization data written to "^data_name);
       with Not_impl msg ->
-        print_endline ("\nNot implemented: "^msg^"XXX"^Printexc.get_backtrace());
+        print_endline ("\nNot implemented: "^msg);
         Printexc.print_backtrace stdout;
         raise Exit
 
