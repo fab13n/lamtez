@@ -23,7 +23,8 @@ type arguments = {
   out_tz_name:    string;
   in_store:       (string*Lexing.lexbuf) option;
   out_store:      string option;
-  run_param:      string option;
+  param:          string option;
+  run:            bool;
   client:         string;
 }
   
@@ -34,10 +35,11 @@ let parse_args() =
   let input      = ref (Lexing.from_channel stdin) in (* LTZ source code *)
   let input_name = ref "stdin" in (* used for logging msgs *)
   let output     = ref None in (* code output filename, defaults to stdout *)
-  let run_param  = ref None in (* opt. param to run the program, litteral string *)
+  let run        = ref false in
   let client     = ref None in (* Tezos-client executable name *)
   let in_store   = ref None in (* store content input file name: name*lexbuf option *)
   let out_store  = ref None in (* store content output file name *)
+  let param      = ref None in
   let emb_store  = ref false in (* do we process embedded store values? *)
 
   let set_level  l ()     = match !level with LUnspecified -> level := l | _ -> failwith "Contradicatory compilation levels" in
@@ -56,10 +58,11 @@ let parse_args() =
      "s", "string",         Arg.String set_input_string,        "Input from string";
      "f", "file",           Arg.String set_input_file,          "Input from file";
      "o", "output",         Arg.String (set_string output),     "Output to file";
-     "E", "embedded-store", Arg.Set    emb_store,                "Output embedded storage";
-     "r", "run",            Arg.String (set_string run_param),  "Run the program";
+     "E", "embedded-store", Arg.Set    emb_store,               "Output embedded storage";
+     "r", "run",            Arg.Set    run,                     "Run the program";
      "F", "store-file",     Arg.String (set_in_store_file),     "Get storage value from file";
      "S", "store-string",   Arg.String (set_in_store_str),      "Get storage from string";
+     "P", "parameter",      Arg.String (set_string param),      "Print this parameter";
      "O", "store-output",   Arg.String (set_string out_store),  "Write storage data to this file";
      "C", "client",         Arg.String (set_string client),     "Set the tezos-client commnad";
      ] in
@@ -67,8 +70,8 @@ let parse_args() =
   let spec_list = List.flatten (List.map spec_variants spec_list) in
   Arg.parse spec_list set_input_file "Lamtez compiler";
 
-  let does_run = ! run_param != None in
-  let does_store = (!in_store, !run_param, !emb_store) <> (None, None, false) in
+  let does_run = !run in
+  let does_store = (!in_store, !run, !emb_store) <> (None, false, false) in
   let level = if !level=LUnspecified then LMichelson else !level in
   if does_store && level!= LMichelson then
     failwith "need a source file to compile store data"; (* TODO intermediate is enough *)
@@ -77,14 +80,15 @@ let parse_args() =
   let does_typecheck = does_interm || level=LTypecheck in
   let does_parse = true in
   { does_parse; does_typecheck; does_interm; does_michelson; does_store; does_run;
-    in_ltz = !input;
+    in_ltz      = !input;
     in_ltz_name = !input_name;
-    out_tz = (match !output with None | Some "-" -> stdout | Some n -> open_out n);
+    out_tz      = (match !output with None | Some "-" -> stdout | Some n -> open_out n);
     out_tz_name = (match !output with None | Some "-" -> "stdout" | Some n -> n);
-    out_store = (match !out_store with None -> None | Some n -> Some n);
-    in_store = !in_store;
-    run_param = !run_param;
-    client = (match !client with None -> "tezos-client" | Some n -> n);
+    out_store   = (match !out_store with None -> None | Some n -> Some n);
+    in_store    = !in_store;
+    run         = !run;
+    param       = !param;
+    client      = (match !client with None -> "tezos-client" | Some n -> n);
   }
 
 
@@ -175,10 +179,17 @@ let parse_file a =
               | None, None -> assert false
             in
 
+            let param = match a.param with
+              | None -> "Unit"
+              | Some src ->
+                  let tz = Data_of_lexbuf.parameter_of_lexbuf 
+                    typed_contract int_contract (Lexing.from_string src) in
+                  log "Compiled parameter";
+                  print_endline tz;
+                  tz
+            in
+
             if a.does_run then begin
-              let p = match a.run_param with Some p -> p | _ -> assert false in
-              let param = Data_of_lexbuf.parameter_of_lexbuf 
-                typed_contract int_contract (Lexing.from_string p) in
               run_program a.client m_contract.MoI.code store_tz param 
             end;
 
