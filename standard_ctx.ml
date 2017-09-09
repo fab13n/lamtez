@@ -19,7 +19,10 @@ let ctx = empty
   |> add_prim    "map" ["k"; "v"]
   |> add_prim    "contract" ["param"; "result"]
   |> add_alias   "account" ([], tapp "contract" [tunit; tunit])
-
+  (* |> add_alias   "closure" (["env"; "param"; "result"],
+                             ttuple[tid "env"; tlambda[tid "param"; tid "result"]]) *)
+  |> add_prim   "closure" ["env"; "param"; "result"]
+  
   (* misc. *)
 
   |> add_evar "fail" ([], TFail)

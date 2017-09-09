@@ -49,7 +49,7 @@ let rec get_level stk v = match stk with
   | (SVar, v', _) :: _ when v=v' -> Some 1
   | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
 
-let rec compile_typed_expr (stk:stack) ((ie, it as et): I.typed_expr) : (stack * string) =
+let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * string) =
   if _DEBUG_ then begin
     print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_untyped_expr ie);
     (* print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_expr ie); *)
@@ -65,13 +65,14 @@ let rec compile_typed_expr (stk:stack) ((ie, it as et): I.typed_expr) : (stack *
   | I.EColl(Ast.CList, list) -> compile_EColl_CList stk list it
   | I.EColl(Ast.CMap,  list) -> compile_EColl_CMap  stk list it
   | I.EColl(Ast.CSet,  list) -> compile_EColl_CSet  stk list it
-  | I.ELambda(params, body) -> compile_ELambda stk params body it (get_closure stk et)
+  | I.ELambda(params, body) -> compile_ELambda stk params body it
   | I.ELet(v, et0, et1) ->
     let stk, c0 = compile_typed_expr stk et0 in
     let stk = (item_v v (snd et0)) :: List.tl stk in (* name the value just computed *)
     let stk, c1 = compile_typed_expr stk et1 in
     let stk = match stk with r :: v :: stk -> r :: stk | _ -> unsound "stack too shallow" in
-    stk, c0^"# let "^v^" = ... in ...\n"^c1^"DIP { DROP } # remove "^v^"\n"
+    stk, sprintf "%s# let %s = %s\n%sDIP{ DROP } # remove %s\n"
+      c0 v (String_of_intermediate.string_of_untyped_expr @@ fst et0) c1 v
   | I.EApp(f, args) -> compile_EApp stk f args it
   | I.EProduct [] -> (item_e ie it) :: stk, "UNIT"
   | I.EProduct fields ->
@@ -195,16 +196,56 @@ and compile_EColl_CSet stk list t_set =
       sprintf "%sPUSH bool True;\n%sUPDATE;\n" (f b) c
   in stk, f list
 
-(* return the closure of a term, i.e. the list of the variables, with their
- * type, defined outside of the term but used inside the term. *)
-and get_closure (stk: stack) et =
-  let g = Standard_ctx.globals in
-  let free_vars = I.get_free_evars ~except:g et in
+and compile_lambda stk param body t_lambda =
+  let inner_stk = [item_v (fst param) (snd param)] in
+  let _, code = compile_typed_expr inner_stk body in
+  let cleanup = "DIP { DROP }; # remove "^fst param^"\n" in
+  (item_s "lambda" t_lambda)::stk, sprintf "LAMBDA %s %s { %s%s }"
+    (compile_etype @@ snd param) (compile_etype @@ snd body) code cleanup
+
+(* return the closure environment of a term, i.e. the list of the variables,
+ * with their type, defined outside of the term but used inside the term. *)
+and get_closure_env (stk: stack) ?(except=[]) et =
+  let except = except @ Standard_ctx.globals in
+  let free_vars = I.get_free_evars ~except et in
   let et_of_v v = match get_level stk v with
     | Some n -> let _, _, t = List.nth stk (n-1) in v, t
     | None -> assert false
   in
   List.map et_of_v free_vars
+
+and compile_closure stk (v_param, t_param) (e_body, t_body as body) =
+  let closure = get_closure_env stk ~except:[v_param] body in
+
+  (* Generate the product holding the closure env. *)
+  let e_prod = I.EProduct(List.map (fun (v,t) -> I.EId v, t) closure) in
+  let t_prod = I.TProduct(None, lazy (List.map snd closure)) in
+  let stk, c_env_make = compile_typed_expr stk (e_prod, t_prod) in
+
+  (* Lambda active code *)
+  let stk_l = List.map (fun (v, t) -> item_v v t) closure in (* closed vars *)
+  let stk_l = (item_v v_param t_param) :: stk_l in           (* argument *)
+  let stk_l, c_lambda = compile_typed_expr stk_l body in
+
+  (* Env splitting code *)
+  let n = List.length closure in
+  let c_env_split = Compile_composite.product_split n in
+
+  (* Env clean-up code *)
+  let rec drops = (* drop env vars and argument *)
+    let rec f = function 1 -> "DROP" | n -> "DROP; "^f (n-1) in f (n+1) in
+
+  (* Function body with closure management code around *)
+  let c_body = sprintf 
+    "DUP; CAR; # arg\nDIP { CDR; %s }; # open closure\n%sDIP { %s } # Remove arg+closure\n" 
+    c_env_split c_lambda drops in
+
+  let t_param_pair = I.TProduct(None, lazy [t_param; t_prod]) in
+  let code = sprintf 
+    "%s # Closure env; \nLAMBDA %s %s { %s }; # Closure code\nPAIR; # Closure"
+    c_env_make (compile_etype t_param_pair) (compile_etype t_body) c_body in
+
+    List.tl stk, code  
 
 (* Closures are represented as a pair `(env, lambda)` where `env` is the
  * product of all the variables defined out of the function but used inside it.
@@ -216,41 +257,26 @@ and get_closure (stk: stack) et =
  * TODO: Tag closure-free lambdas, maybe while typechecking, and optimize
  *       both their encoding and their application.
  *)
-and compile_ELambda stk params body it_lambda closure =
+and compile_ELambda stk params body it_lambda =
   (* TODO forbid access to storage fields. *)
-  match params, body with
+  match params, it_lambda with
   | _::_::_, _ -> unsupported "nested (multi-parameter) lambdas"
   | [], _ -> unsound "I.ELambda without parameter?!"
-  | [(v_param, t_param)], (e_body, t_body) ->
-    (* Generate the product holding the closure env. *)
-    let e_prod = I.EProduct(List.map (fun (v,t) -> I.EId v, t) closure) in
-    let t_prod = I.TProduct(None, lazy (List.map snd closure)) in
-    let stk, c_env_make = compile_typed_expr stk (e_prod, t_prod) in
-    (* Lambda active code *)
-    let stk_l = List.map (fun (v, t) -> item_v v t) closure in (* closed vars *)
-    let stk_l = (item_v v_param t_param) :: stk_l in           (* argument *)
-    let stk_l, c_lambda = compile_typed_expr stk_l body in
-    (* Env splitting code *)
-    let n = List.length closure in
-    let c_env_split = Compile_composite.product_split n in
-    (* Env clean-up code *)
-    let rec drops = (* drop env vars and argument *)
-      let rec f = function 1 -> "DROP" | n -> "DROP; "^f (n-1) in f (n+1) in
-    (* Function body with closure management code around *)
-    let c_body = sprintf 
-      "DUP; CAR; # arg\nDIP { CDR; %s }; # open closure\n%sDIP { %s } # Remove arg+closure\n" 
-      c_env_split c_lambda drops in
+  | [param], I.TLambda _ -> compile_lambda stk param body it_lambda 
+  | [param], I.TPrim("closure", [t_env; _; t_result]) ->
+    compile_closure stk param body
+  | [_], _ -> unsound "Bad lambda type"
 
-    let t_param = I.TProduct(None, lazy [t_param; t_prod]) in
-    let code = sprintf 
-      "%s # Closure env; \nLAMBDA %s %s { %s }; # Closure code\nPAIR; # Closure"
-      c_env_make (compile_etype t_param) (compile_etype t_body) c_body in
-
-    List.tl stk, code  
 
 and compile_closure_application stk f args t_result =
   (* The closure is encodede as a `(f, env)` pair, which must be split
    * and recombined to call `f` with `(arg, env)` as its argument. *)
+
+  (* TODO: need to erase the environment from closure type: 
+   * `type closure a b = (∃e): ((a×e)->b) × e`
+   * Can't be expressed in simply-typed lambda calculus, but they can be wrapped
+   * in a big, contract-wide sum type.
+   *)
   let arg = match args with [arg] -> arg | _ ->unsupported "Closures with more than 1 param" in
   let stk0 = stk in
   let stk, c_closure = compile_typed_expr stk f in
@@ -258,6 +284,13 @@ and compile_closure_application stk f args t_result =
   let code = sprintf "%sDUP; CAR; SWAP; CDR # env:f\n%s PAIR; # (arg,env):f\nEXEC"
     c_closure c_arg in
   (item_s "call" t_result) :: stk0, code
+
+and compile_lambda_application stk f args t_result =
+  let arg = match args with [arg] -> arg | _ -> not_impl "Multi-param lambdas" in
+  let stk0 = stk in
+  let stk, c_func = compile_typed_expr stk f in
+  let stk, c_arg     = compile_typed_expr stk arg in
+  (item_s "call" t_result) :: stk0, c_func^c_arg^"EXEC"
 
 and compile_EApp stk f args t_result = match f with
   | I.ELambda([(params, body)], et0), t_lambda -> not_impl "apply literal lambda"
@@ -267,7 +300,11 @@ and compile_EApp stk f args t_result = match f with
     end
   | (I.EId(name), t_f) -> begin match get_level stk name with
     | None -> (item_e (I.EApp(f, args)) t_result)::stk, compile_primitive stk name args t_result
-    | Some n -> compile_closure_application stk f args t_result 
+    | Some _ -> 
+      match t_f with
+      | I.TLambda _ -> compile_lambda_application stk f args t_result
+      | I.TPrim("closure", _) -> compile_closure_application stk f args t_result
+      | _ -> unsound "Applying non-function/closure" 
     end
   | _ -> compile_closure_application stk f args t_result
 

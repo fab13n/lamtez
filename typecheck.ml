@@ -97,17 +97,23 @@ and typecheck_EColl_CSet ctx elts =
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx l id sid e se =
+and typecheck_ELambda ctx l id sid ebody sb =
   (* TODO fail if id is bound by default ctx? *)
   (* Type e supposing that id has type t_arg. *)
-  let tid, te = match sid, se with
-    | ([], tid), ([], te) -> tid, te 
+  let tid, tb = match sid, sb with
+    | ([], tid), ([], tb) -> tid, tb 
     | _ -> unsupported "polymorphic types" in
   let ctx, prev = Ctx.push_evar id sid ctx in
-  let ctx, te' = typecheck_expr ctx e in
-  let ctx, te = Ctx.unify ctx te te' in
-  let ctx = Ctx.pop_evar prev ctx in
-  ctx , A.TLambda(A.noloc, tid, te)
+  let ctx, tb'  = typecheck_expr ctx ebody in
+  let ctx, tb   = Ctx.unify ctx tb tb' in
+  let ctx       = Ctx.pop_evar prev ctx in
+  let tlambda   = A.TLambda(A.noloc, tid, tb) in
+  match A.get_free_evars ~except:[id] ebody with
+  | [] -> ctx, tlambda
+  | env ->
+    let get_type id = snd @@ typecheck_expr ctx (A.eid id) in
+    let tenv = List.map get_type env in 
+    ctx, A.tapp "closure" [A.ttuple tenv; tid; tb]
 
 and typecheck_ELetIn ctx id s_id e0 e1 =
   if fst s_id <> [] then unsupported "Polymorphic types";
@@ -135,7 +141,8 @@ and typecheck_EApp ctx f arg =
   let ctx, t_f = typecheck_expr ctx f in
   let ctx, t_arg = typecheck_expr ctx arg in
   let ctx, t_param, t_result = match t_f with
-    | A.TLambda(_, t_param, t_result) -> ctx, t_param, t_result
+    | A.TLambda(_, t_param, t_result)
+    | A.TApp(_, "closure", [_; t_param; t_result]) -> ctx, t_param, t_result
     | A.TId(_, id) ->
         let t_param, t_result = A.fresh_tvar(), A.fresh_tvar() in
         let ctx, _ = Ctx.unify ctx t_f (A.TLambda(A.noloc, t_param, t_result)) in

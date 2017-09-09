@@ -96,7 +96,10 @@ let rec compile_expr ctx e =
   | A.ELambda _ as e ->
     let rec get = function A.ELambda(_, a, _, b, _) -> let p, t = get b in a::p, t | t -> [], t in
     let param_names, body = get e in
-    let param_types = match it with I.TLambda(p, _) -> p | _ -> unsound "bad lambda type" in
+    let param_types = match it with
+    | I.TLambda(p, _) -> p (* TODO multi-parameter functions will always be closures. *)
+    | I.TPrim("closure", [_; p; _]) -> [p] 
+    | _ -> unsound "bad lambda type" in
     let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
     I.ELambda(typed_names, c body), it
 

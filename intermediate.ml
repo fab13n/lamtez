@@ -72,4 +72,4 @@ let get_free_evars ?except e =
   let set = match except with
     | None -> f e 
     | Some exceptions -> f e -- S.of_list exceptions
-  in S.elements set
+  in List.sort compare @@ S.elements set

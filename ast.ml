@@ -168,21 +168,27 @@ let fresh_vars, fresh_tvars, fresh_evars =
     List.rev (f (g ~prefix) [] n) in
   repeat fresh_var, repeat fresh_tvar, repeat fresh_evar
 
-let get_free_tvars t =
+let get_free_tvars ?except t =
   let module S = Set.Make(String) in
+  let (+) = S.union
+  and (--) s0 s1 = S.diff s0 s1 in
   let rec f = function
     | TFail -> S.empty
     | TId(_, id) -> S.singleton id
-    | TLambda(_, e0, e1) -> S.union (f e0) (f e1)
+    | TLambda(_, e0, e1) -> f e0 + f e1
     | TTuple(_, list) 
     | TApp(_, _, list) -> 
       List.fold_left S.union S.empty (List.map f list) in
-  S.elements (f t)
+  let set = match except with
+    | None -> f t 
+    | Some exceptions -> f t -- S.of_list exceptions
+  in List.sort compare @@ S.elements set
 
-let get_free_evars e =
+let get_free_evars ?except e =
   let module S = Set.Make(String) in
   let (+) = S.union
-  and (-) s e = S.remove e s in
+  and (-) s e = S.remove e s
+  and (--) s0 s1 = S.diff s0 s1 in
   let rec f = function
     | EId(_, id) -> S.singleton id
     | ELit _ -> S.empty
@@ -202,7 +208,10 @@ let get_free_evars e =
       let fold acc (_, (v, e)) = acc + (f e - v) in
       List.fold_left fold S.empty list
   in
-  S.elements (f e)
+  let set = match except with
+    | None -> f e
+    | Some exceptions -> f e -- S.of_list exceptions
+  in List.sort compare @@ S.elements set
 
 let rec replace_evar var e e' =
   let r = replace_evar var e in

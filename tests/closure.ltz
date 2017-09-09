@@ -5,4 +5,6 @@ let n = +234;
 let flag = False;
 let f = (\(x :: nat): (if flag: x+m | else: x+n));
 
-f 345
+let g = (\(x :: nat): x + 1);
+
+(f 345, g 456)
