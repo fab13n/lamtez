@@ -1,13 +1,19 @@
+open Printf
 open Utils
 open Ast
+
+let is_fresh_tvar = function TId(_, x) -> String.contains x '%' | _ -> false
 
 let rec string_of_type t =
   let sot = string_of_type in
   match t with
   | TId(_, s) -> s
   | TFail -> "fail"
-  | TLambda(_) as t ->
-      let rec f = function TLambda(_, a, b) -> sot a^" -> "^f b | t -> sot t in "("^f t^")"
+  | TLambda _ as t ->
+      let rec f = function 
+        | TLambda(_, a, b) -> sprintf "%s -> %s" (sot a) (f b)
+        | t -> sot t in
+      "("^f t^")"
   | TTuple(_, list) -> "("^sep_list " * " sot list^")"    
   | TApp(_, name, []) -> "'"^name
   | TApp(_, name, args) -> "('"^name^" "^sep_list " " sot args^")"
@@ -46,23 +52,29 @@ let rec string_of_lit = function
   | LTez(_, n) -> Printf.sprintf "tz%d.%02d" (n/100) (n mod 100)
   | LTime(_, s) -> s
   | LSig(_, s) -> "sig:"^s
+  | LKey(_, s) -> s
 
 let string_of_collection_kind = function
   | CSet -> "set" | CList -> "list" | CMap -> "map" 
 
-let rec string_of_expr e =
+let rec string_of_expr =
   let soe = string_of_expr in
-  match e with
+  let sos = string_of_scheme in
+  function
   | ELit(_, c) -> string_of_lit c
   | EColl(_, kind, list) ->
     "("^string_of_collection_kind kind^" "^sep_list " " soe list^")"
   | EId(_, s) -> s
-  | ELambda _ ->
+  | ELambda(_, _, _, _, tr) as e ->
+    let type_annot = if is_fresh_tvar (snd tr) then "" else " :: "^sos tr in
     let rec f = function
-      | ELambda(_, v, t, e) -> "("^v^": "^string_of_scheme t^") "^f e
-      | e -> ": "^soe e in
+      | ELambda(_, v, tv, e, te) ->
+        let p = if is_fresh_tvar (snd tv) then v else "("^v^" :: "^sos tv^")" in
+        (* let t = if is_fresh_tvar te then " :: "^sos te else "" in *)
+        p^" "^f e
+      | e -> type_annot^": "^soe e in
     "(λ"^f e^")"
-  | ELet(_, v, t, e0, e1) -> "let ("^v^": "^string_of_type t^") = "^soe e0^" in "^soe e1
+  | ELet(_, v, t, e0, e1) -> "let ("^v^": "^sos t^") = "^soe e0^" in "^soe e1
   | EApp _ as e -> let rec f = function EApp(_, a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
   | ETuple(_, list) -> "(" ^ sep_list ", " soe list ^ ")"
   | ESequence(_, list) -> "(" ^ sep_list "; " soe list ^ ")"

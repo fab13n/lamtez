@@ -1,6 +1,6 @@
 .PHONY: all clean byte native profile debug sanity test
 
-OCB_FLAGS=-use-ocamlfind -use-menhir -I src -pkgs str
+OCB_FLAGS=-use-ocamlfind -use-menhir -I src -pkgs str -pkgs unix
 OCB=ocamlbuild $(OCB_FLAGS)
 COLORIZE=(ack 'File "[^"]+", line [0-9]+, characters [0-9]+-[0-9]+:' --passthru --color || true)
 

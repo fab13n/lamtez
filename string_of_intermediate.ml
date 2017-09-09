@@ -18,7 +18,8 @@ let rec string_of_etype =
   function
   | TPrim(name, []) -> name
   | TPrim(name, args) -> "("^name^" "^sep_list " " t args^")"
-  | TLambda(params, result) -> "("^sep_list ", " t params^" -> "^t result^")"
+  | TLambda(params, result) ->
+    "("^sep_list ", " t params^" -> "^t result^")"
   | TProduct(Some(name, []), _)   | TSum(Some(name, []), _) -> name
   | TProduct(Some(name, args), _) | TSum(Some(name, args), _) -> 
    "("^name^sep_list " " t args^")"

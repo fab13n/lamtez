@@ -1,8 +1,17 @@
 open Printf
 open Utils
+
 module I = Intermediate
 module P = String_of_intermediate
+module CCmp = Compile_composite
 module Stk_S = Compile_stack_store
+
+
+type contract = {
+  code: string;
+  storage_init: string option;
+  make_storage: string -> string;
+}
 
 let _DEBUG_ =true
 let debug_indent = ref 0
@@ -21,7 +30,7 @@ let rec compile_etype t =
   | I.TPrim(t, args) -> sprintf "(%s %s)" t (sep_list " " c args)
   | I.TLambda(params, result) -> sprintf "(lambda %s %s)" (sep_list " " c params) (c result)
   | I.TProduct(_, lazy []) -> "unit"
-  | I.TProduct(_, lazy fields) -> Compile_composite.product_type (List.map c fields)
+  | I.TProduct(_, lazy fields) -> CCmp.product_type (List.map c fields)
   | I.TSum(Some("bool", []), _) -> "bool"
   | I.TSum(Some("list", [t']), _) -> sprintf "(list %s)" (c t')
   | I.TSum(Some("option", [t']), _) -> sprintf "(option %s)" (c t')
@@ -300,7 +309,7 @@ and compile_ESum stk i n content it =
     | "option", [t'], 1, 2 ->
       let stk, code = compile_typed_expr stk content in (item_s "Some" it)::List.tl stk, code^"SOME"
     | "list",   [t'], 1, 2 ->
-      let stk, code = compile_typed_expr stk content in (item_s "Cons" it)::List.tl stk, code^"DUP; CAR; SWAP; CDR; CONS"
+      let stk, code = compile_typed_expr stk content in (item_s "Cons" it)::List.tl stk, code^"DUP; CDR; SWAP; CAR; CONS"
     | _ ->
       let types = List.map compile_etype types in
       let stk, code = compile_typed_expr stk content in
@@ -441,7 +450,7 @@ and compile_data_sum i n e t_sum = match i, t_sum with
 
 let compile_contract i_contract = 
   match i_contract.I.code with
-  | I.ELambda(_::_::_, _), I.TLambda(_, _) -> not_impl "contracts returning only a lambda"
+  | I.ELambda(_::_::_, _), _ -> not_impl "contracts returning a function"
   | I.ELambda([(v_param, t_param)], (e_body, t_body as body)), t_lambda ->
     Stk_S.reset();
 
@@ -467,16 +476,21 @@ let compile_contract i_contract =
       sprintf "}\n"
     in
 
-    let init_data = match i_contract.I.storage_init with None -> None | Some et_user_store ->
+    let storage_init = match i_contract.I.storage_init with None -> None | Some et_user_store ->
       (* Actual storage is the product of stack saving store and user-defined store. *)
       let et_unit = I.EProduct[], I.TProduct(Some("unit", []), lazy []) in
       let et_compiler_store = I.ESum(0, List.length saved_stacks, et_unit), t_compiler_store in
       let et_stores = I.EProduct[et_compiler_store; et_user_store], t_stores in
       Some (compile_data et_stores) in
+    
+    let n = List.length saved_stacks in
+    let make_storage user_storage =
+      sprintf "(Pair %s %s)\n" (CCmp.sum_data 0 n "Unit") user_storage
+    in
 
     let code = patch_stack_store_operations code in
     let code = Code_format.indent '{' '}' code in
-    code, init_data
+    {code; storage_init; make_storage}
 
   | _ -> unsound "Bad contract type"
 

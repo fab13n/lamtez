@@ -32,6 +32,7 @@ let rec typecheck_expr ctx expr =
     | A.LTez _    -> ctx, A.tprim "tez"
     | A.LSig _    -> ctx, A.tprim "sig"
     | A.LTime _   -> ctx, A.tprim "time"
+    | A.LKey _    -> ctx, A.tprim "key"
     end
   | A.EColl(_, A.CList, list) -> typecheck_EColl_CList ctx list
   | A.EColl(_, A.CMap,  list) -> typecheck_EColl_CMap  ctx list
@@ -39,7 +40,7 @@ let rec typecheck_expr ctx expr =
   | A.EId(_, id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
     ctx, Ctx.instantiate_scheme (scheme)
-  | A.ELambda(_, id, scheme, e) -> typecheck_ELambda ctx id scheme e
+  | A.ELambda(_, id, sid, e, se) -> typecheck_ELambda ctx expr id sid e se
   | A.ELet(_, id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
   | A.EApp(_, f, arg) -> typecheck_EApp ctx f arg
   | A.ETypeAnnot(_, e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
@@ -96,20 +97,23 @@ and typecheck_EColl_CSet ctx elts =
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx id scheme e =
-  if fst scheme <> [] then unsupported "parametric parameter types";
+and typecheck_ELambda ctx l id sid e se =
   (* TODO fail if id is bound by default ctx? *)
   (* Type e supposing that id has type t_arg. *)
-  let ctx, prev = Ctx.push_evar id scheme ctx in
-  let ctx, te = typecheck_expr ctx e in
-  (* TODO let-generalization? *)
+  let tid, te = match sid, se with
+    | ([], tid), ([], te) -> tid, te 
+    | _ -> unsupported "polymorphic types" in
+  let ctx, prev = Ctx.push_evar id sid ctx in
+  let ctx, te' = typecheck_expr ctx e in
+  let ctx, te = Ctx.unify ctx te te' in
   let ctx = Ctx.pop_evar prev ctx in
-  ctx , A.TLambda(A.noloc, snd scheme, te)
+  ctx , A.TLambda(A.noloc, tid, te)
 
-and typecheck_ELetIn ctx id t_id e0 e1 =
+and typecheck_ELetIn ctx id s_id e0 e1 =
+  if fst s_id <> [] then unsupported "Polymorphic types";
   (* TODO fail if id is bound by default ctx? *)
   let ctx, t0 = typecheck_expr ctx e0 in
-  let ctx, t0 = Ctx.unify ctx t_id t0 in
+  let ctx, t0 = Ctx.unify ctx (snd s_id) t0 in
   (* TODO: generalize t0? *)
   let ctx, prev = Ctx.push_evar id ([], t0) ctx in
   let ctx, t1 = typecheck_expr ctx e1 in
@@ -403,8 +407,8 @@ let check_contract_calls expr =
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
   | A.ESequence(_, list)                  -> List.exists f list
   | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, "call-contract", _, _)   -> false
-  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
+  | A.ELambda(_, "call-contract", _, _, _)-> false
+  | A.ELambda(_, _, _, e, _)              -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
   | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
   | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
@@ -426,16 +430,16 @@ let check_store_set expr =
   | A.ELit _ | A.EId _ -> false
   | A.EProductGet(_, e, _) | A.ESum(_, _, e) | A.EUnOp(_, _, e) | A.ETypeAnnot(_, e, _) -> f e
   | A.ESumCase(_, e, list) -> f e || List.exists (fun (v, (_, e)) -> f e) list
-  | A.ESequence(_, list)                  -> List.exists f list
-  | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
-  | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
-  | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
-  | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
-  | A.EStoreSet(_, _, e0, e1)             -> forbidden [e0; e1] " surrounding updates"
-  | A.ETuple(_, list)                     -> forbidden list "tuples"
-  | A.ETupleGet(_, e, _)                  -> f e
-  | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
+  | A.ESequence(_, list)                -> List.exists f list
+  | A.EColl(_, _, list)                 -> forbidden list "collections"
+  | A.ELambda(_, _, _, e, _)            -> forbidden [e] "functions"
+  | A.EApp(_, e0, e1)                   -> forbidden [e0; e1] "function applications"
+  | A.EBinOp(_, e0, _, e1)              -> forbidden [e0; e1] "binary operators"
+  | A.EProductSet(_, e0, _, e1)         -> forbidden [e0; e1] "product updates"
+  | A.EStoreSet(_, _, e0, e1)           -> forbidden [e0; e1] " surrounding updates"
+  | A.ETuple(_, list)                   -> forbidden list "tuples"
+  | A.ETupleGet(_, e, _)                -> f e
+  | A.EProduct(_, list)                 -> forbidden (List.map snd list) "product types"
   | A.ELet(_, "call-contract", _, _, _) -> false
   | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
   in let _ = f expr in
@@ -471,12 +475,14 @@ let typecheck_contract ctx (type_declarations, storage_fields, code) =
   let ctx = Ctx.add_evar "@" ([], A.TApp(A.noloc, "@", [])) ctx in
 
   begin match code with
-    | A.ELambda(_, _, _, body) -> check_contract_calls body; check_store_set body;
+    | A.ELambda(_, _, _, body, _) -> check_contract_calls body; check_store_set body;
     | _ -> unsupported "Contract code must be a litteral lambda"
   end;
 
   (* Check for unresolved polymorphism. *)
-  (* TODO reassociate TId with their EId. reverse lookup in ctx? *)
+  (* TODO reassociate TId with their EId. reverse lookup in ctx? Or
+   * just reference them when first met in Typecheck. *)
+  (* TODO Tolerate the parameter to be untypable, and make it a unit. *)
   let f_code = A.get_free_tvars t_code in
   if f_code <> [] then type_error 
       (A.loc_of_expr code) 

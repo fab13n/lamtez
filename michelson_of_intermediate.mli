@@ -1,7 +1,11 @@
 module I = Intermediate
 
-type stack
+type contract = {
+  code: string;
+  storage_init: string option;
+  make_storage: string -> string;
+}
 
 val compile_etype: I.etype -> string
-val compile_typed_expr: stack -> I.typed_expr -> stack * string
-val compile_contract: I.contract -> string * string option
+val compile_contract: I.contract -> contract
+val compile_data: I.typed_expr -> string

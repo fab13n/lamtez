@@ -87,14 +87,14 @@ let rec compile_expr ctx e =
       I.ELit(s), it
     | A.LString(_, s) -> I.ELit(sprintf "\"%s\"" s), it
     | A.LTez(_, n)    -> I.ELit(sprintf "\"%d.%02d\"" (n/100) (n mod 100)), it
-    | A.LTime(_, s)   -> I.ELit(sprintf "\"%s\"" s), it
-    | A.LSig(_, s)    -> I.ELit(sprintf "\"%s\"" s), it
+    | A.LTime(_, s) | A.LSig(_, s) | A.LKey(_, s) ->
+      I.ELit(sprintf "\"%s\"" s), it
     end
   | A.EColl(_, k, list) -> I.EColl(k, List.map c list), it
-  | A.EId(_, id)    -> I.EId id, it
+  | A.EId(_, id) -> I.EId id, it
 
   | A.ELambda _ as e ->
-    let rec get = function A.ELambda(_, a, _, b) -> let p, t = get b in a::p, t | t -> [], t in
+    let rec get = function A.ELambda(_, a, _, b, _) -> let p, t = get b in a::p, t | t -> [], t in
     let param_names, body = get e in
     let param_types = match it with I.TLambda(p, _) -> p | _ -> unsound "bad lambda type" in
     let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
@@ -175,7 +175,7 @@ let rec compile_expr ctx e =
 
 let compile_contract (c: Typecheck.typed_contract) : I.contract =
   let ctx = c.Typecheck.ctx in
-  { I.code         = compile_expr ctx c.Typecheck.code;
+  { I.code         = compile_expr  ctx c.Typecheck.code;
     I.storage_type = compile_etype ctx c.Typecheck.storage_type;
     I.storage_init = ( match c.Typecheck.storage_init with
                      | Some e -> Some (compile_expr ctx e)

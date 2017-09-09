@@ -75,6 +75,7 @@ let sum_type,
   type_ (make_node "pair") make_leaf,
   type_ (make_node "Pair") make_leaf
 
+(* Wrap a data string into a sum type (nesting of `Left`s and `Right`s). *)
 let sum_data i n e =
   let path = List.nth (paths n) i in
   let rec fold b e = sprintf "(%s %s)" (if b then "Right" else "Left") e in

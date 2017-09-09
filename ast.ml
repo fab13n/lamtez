@@ -33,6 +33,7 @@ type literal =
   | LTez    of loc * int
   | LTime   of loc * string
   | LSig    of loc * string
+  | LKey    of loc * string
 
 type collection_kind = CSet | CMap | CList
 
@@ -40,8 +41,8 @@ type expr =
   | ELit    of loc * literal
   | EColl   of loc * collection_kind * expr list
   | EId     of loc * evar
-  | ELambda of loc * evar * scheme * expr (* TODO optional result annotation *)
-  | ELet    of loc * evar * etype * expr * expr (* TODO type should be a scheme for consistency *)
+  | ELambda of loc * evar * scheme * expr * scheme
+  | ELet    of loc * evar * scheme * expr * expr
   | ESequence of loc * expr list
   | EApp    of loc * expr * expr
 
@@ -76,7 +77,7 @@ let string_of_loc: loc -> string = function
               p1.pos_fname p1.pos_lnum p2.pos_lnum p1.pos_cnum p2.pos_cnum
 
 let loc_of_expr = function
-| ELit(loc, _) | EColl(loc, _, _)| EId(loc, _) | ELambda(loc, _, _, _) | ELet(loc, _, _, _, _)
+| ELit(loc, _) | EColl(loc, _, _)| EId(loc, _) | ELambda(loc, _, _, _, _) | ELet(loc, _, _, _, _)
 | EApp(loc, _, _) | ETuple(loc, _) | ETupleGet(loc, _, _) | EProduct(loc, _)
 | EProductGet(loc, _, _) | EProductSet(loc, _, _, _) | EStoreSet(loc, _, _, _)
 | ESum(loc, _, _) | ESumCase(loc, _, _) | EBinOp(loc, _, _, _) | EUnOp(loc, _, _)
@@ -185,7 +186,7 @@ let get_free_evars e =
   let rec f = function
     | EId(_, id) -> S.singleton id
     | ELit _ -> S.empty
-    | ELambda(_, v, _, e) -> f e - v
+    | ELambda(_, v, _, e, _) -> f e - v
     | ELet(_, v, _, e0, e1) -> f e0 + (f e1 - v)
     | EColl(_, _, list) | ESequence(_, list) | ETuple(_, list) ->
       List.fold_left (+) S.empty (List.map f list) 
@@ -209,8 +210,8 @@ let rec replace_evar var e e' =
   | EId(_, var') when var'=var -> e
   | ELit _ | EId _ -> e'
   | EColl(loc, kind, list) -> EColl(loc, kind, List.map r list)
-  | ELambda(_, var', _, _) when var'==var -> e'
-  | ELambda(loc, var', t, e0) -> ELambda(loc, var', t, r e0)
+  | ELambda(_, var', _, _, _) when var'==var -> e'
+  | ELambda(loc, var', t, e0, t0) -> ELambda(loc, var', t, r e0, t0)
   | ELet(loc, var', t, e0, e1) when var=var' -> ELet(loc, var', t, r e0, e1)
   | ELet(loc, var', t, e0, e1) -> ELet(loc, var', t, r e0, r e1)
   | EApp(loc, e0, e1) -> EApp(loc, r e0, r e1)

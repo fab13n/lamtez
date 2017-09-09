@@ -13,6 +13,12 @@ let app loc f args =
   | EId(_, "map")  -> collection CMap  args
   | EId(_, "set")  -> collection CSet  args
   | f              -> eapp (f::args)
+
+let data_collection ?(loc=noloc) constr_name args =
+  if not (List.mem constr_name ["list";"set";"map"]) then
+    failwith "Not a data constructor";
+  app loc (EId(noloc, constr_name)) args
+
 %}
 %token <int> NAT
 %token <int> INT
@@ -20,6 +26,7 @@ let app loc f args =
 %token <string> STRING
 %token <string> TIMESTAMP
 %token <string> SIGNATURE
+%token <string> KEY
 %token <string> ID
 %token <string> TAG
 %token LPAREN RPAREN
@@ -33,10 +40,12 @@ let app loc f args =
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
 %token TYPE LET IF CASE ELSE NOT
 %token EOF
+
 %start <Ast.contract> contract
+%start <(string*Ast.expr) list> data_store
+%start <Ast.expr> data_parameter
 
 %right ARROW
-%nonassoc CASE
 %left AND OR XOR
 %nonassoc EQ NEQ
 %nonassoc LE LT GE GT
@@ -78,22 +87,31 @@ atomic_constant:
 | n=TEZ {LTez(loc $startpos $endpos, n)}
 | n=TIMESTAMP {LTime(loc $startpos $endpos, n)}
 | s=SIGNATURE {LSig(loc $startpos $endpos, s)}
-| s=STRING {LString(loc $startpos $endpos, s)} (* TODO Handle "\\\"" *)
-(* TODO support crypto keys *)
+| s=STRING {LString(loc $startpos $endpos, s)}
+| s=KEY {LKey(loc $startpos $endpos, s)}
 
 data:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | LAMBDA p=parameter+ COLON e=expr {not_impl "lambda data"}
 | LPAREN p=separated_list(COMMA, data) RPAREN {etuple ~loc:(loc $startpos $endpos) p}
-| LBRACE p=separated_list(COMMA, data_product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
+| LPAREN constr=ID args=data* RPAREN {data_collection ~loc:(loc $startpos $endpos) constr args} 
+| LBRACE p=separated_list(COMMA, data_product_pair) RBRACE {EProduct(loc $startpos $endpos, p);} 
 | tag=TAG e=data? {match e with Some e -> ESum(loc $startpos $endpos, tag, e) | None -> ESum(loc $startpos $endpos, tag, eunit)}
 
 data_product_pair: tag=TAG COLON? data=data {tag, data}
 
+data_store_item: STORE i=tag_or_id EQ d=data {i, d}
+
+data_store: x=data_store_item* EOF {x}
+data_parameter: d=data EOF {d}
+
 expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
-| LAMBDA p=parameter+ COLON e=expr_sequence {List.fold_right (fun (pe, pt) acc -> ELambda(loc $startpos $endpos, pe, pt, acc)) p e}
+| LAMBDA p=parameter+ t=lambda_annot COLON e=expr_sequence {
+  (* TODO put the lambda annot in outermost lambda *)
+  let fold (pe, pt) acc = ELambda(loc $startpos $endpos, pe, pt, acc, ([], fresh_tvar())) in
+  List.fold_right fold p e}
 | LPAREN RPAREN {eunit_loc (loc $startpos $endpos)}
 | LPAREN e=expr RPAREN {e}
 | LPAREN e0=expr COMMA rest=separated_nonempty_list(COMMA, expr) RPAREN {
@@ -106,14 +124,14 @@ expr0:
 | LPAREN IF BAR? c=separated_list(BAR, if_case) RPAREN {let loc=loc $startpos $endpos in eif ~loc c}
 
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
-| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd (snd p), e0, e1)} (* TODO keep annotation if present *)
+| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd p, e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
 | e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(loc $startpos $endpos, e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(loc $startpos $endpos, e, n)}
 | STORE s=tag_or_id  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
 | STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
 
-
+lambda_annot: TYPE_ANNOT t=etype {[], t} | {[], fresh_tvar()}
 
 expr:
 | f=expr0 args=expr_arg* { app (loc $startpos $endpos) f args }

@@ -34,7 +34,7 @@ let timezone = 'Z' | ('+' d d? (':' d d)?)
 let time = d d d d '-' d d '-' d d 'T' d d ':' d d ':' d d timezone
 let b58 = ['1'-'9' 'A'-'H' 'J'-'N' 'P'-'Z' 'a'-'k' 'm'-'z']
 let sig = "sig:" b58+
-
+let key = "tz1" b58+
 rule read = parse
 | white {read lexbuf}
 | '#' [^'\r' '\n']* ['\r' '\n'] {read lexbuf}
@@ -55,11 +55,13 @@ rule read = parse
 | tz_int {TEZ(int_of_tz_int(Lexing.lexeme lexbuf))}
 | time {TIMESTAMP(Lexing.lexeme lexbuf)}
 | sig {SIGNATURE(trim lexbuf 4 0)}
+| key {KEY(Lexing.lexeme lexbuf)}
 
 | '.' d+ {TUPLE_GET(int_of_string (trim lexbuf 1 0))}
 | '.' tag {PRODUCT_GET(trim lexbuf 1 0)}
 
-| '(' {LPAREN} | ')' {RPAREN} | '\\' {LAMBDA} | "->" {ARROW}
+| '(' {LPAREN} | ')' {RPAREN} 
+| '\\' {LAMBDA} | "->" {ARROW}
 | ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}
