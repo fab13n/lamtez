@@ -60,7 +60,7 @@ let rec typecheck_expr ctx expr =
   let ctx = Ctx.save_type expr t ctx in
   if _DEBUG_ then begin
     decr debug_indent;
-    print_endline (String.make (2 * !debug_indent) ' '^"Result: val "^P.string_of_expr expr^": "^P.string_of_type t);
+    print_endline (String.make (2 * !debug_indent) ' '^"Result "^P.string_of_expr expr^" :: "^P.string_of_type t);
   end;
   ctx, t
 
@@ -474,10 +474,12 @@ let typecheck_contract ctx (type_declarations, storage_fields, code) =
   in
 
   (* Compile the code itself *)
-  let ctx, t = typecheck_expr ctx code in
-  let t_param = A.fresh_tvar ~prefix:"param" () in
-  let t_result = A.fresh_tvar ~prefix:"result" () in
-  let ctx, t_code =  Ctx.unify ctx t (A.tlambda [t_param; t_result]) in
+  let ctx, t_code = typecheck_expr ctx code in
+  let t_param, t_result = match t_code with
+    | A.TLambda(_, t_param, t_result) -> t_param, t_result
+    | A.TApp(_, "closure", [_; t_param; t_result]) -> t_param, t_result
+    | _ -> failwith "Bad contract type"
+    in
   let t_store = Ctx.expand_type ctx (A.tid "@") in
   let ctx = Ctx.add_evar "@" ([], A.TApp(A.noloc, "@", [])) ctx in
 
@@ -500,9 +502,6 @@ let typecheck_contract ctx (type_declarations, storage_fields, code) =
       (A.loc_of_expr code) 
       ("Unresolved types "^String.concat ", " f_store^
        " in storage type: "^P.string_of_type t_code^"; add type annotations.");
-
-
-  let t_param, t_result = match t_code with A.TLambda(_, a, b) -> a, b | _ -> assert false in
 
   (* TODO migrate contract-call and EStoreSet checks here. *)
   { ctx          = ctx; 
