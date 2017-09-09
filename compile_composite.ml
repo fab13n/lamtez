@@ -142,16 +142,12 @@ let product_make = function 0 -> "" | n ->
     | 0 -> "PAIR"
     | n -> "D"^String.make n 'I'^"P { PAIR }" in
 
-  let rec step y =
-    print_endline("step "^pp2s y);
-    match y with
+  let rec step = function
     | (false::x0) :: (true::x1) :: y when x0=x1 -> 0, x0::y
     | x :: y -> let n, y = step y in n+1, x::y
     | [] -> assert false in
 
-  let rec f y =
-    print_endline("f "^pp2s y);
-    match y with
+  let rec f = function
     | [[]] -> []
     | [_] -> assert false
     | y -> let n, y = step y in n :: f y in
