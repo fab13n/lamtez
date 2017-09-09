@@ -182,7 +182,12 @@ let parse_file a =
               run_program a.client m_contract.MoI.code store_tz param 
             end;
 
-            begin match a.out_store with None -> () | Some n ->
+            begin match a.out_store with
+            | None when not a.does_run ->
+              log "Writing stored data to stdous";
+              print_endline store_tz
+            | None -> ()  
+            | Some n ->
               log @@ "Writing stored data to "^n;
               let ch = if n="-" then stdout else open_out n in
               output_string ch store_tz
