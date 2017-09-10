@@ -9,3 +9,5 @@ type contract = {
 val compile_etype: I.etype -> string
 val compile_contract: I.contract -> contract
 val compile_data: I.typed_expr -> string
+
+val _DEBUG_: bool ref

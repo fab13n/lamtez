@@ -12,3 +12,5 @@ type typed_contract ={
 
 val typecheck_expr:     Ctx.t -> A.expr -> (Ctx.t * A.etype)
 val typecheck_contract: Ctx.t -> A.contract -> typed_contract
+
+val _DEBUG_: bool ref

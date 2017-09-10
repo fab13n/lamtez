@@ -36,3 +36,5 @@ val retrieve_type: t -> A.expr -> A.etype
 val get_evars: t -> A.evar list
 
 val string_of_t: t -> string
+
+val _DEBUG_: bool ref

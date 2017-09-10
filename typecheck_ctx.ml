@@ -2,7 +2,7 @@ open Utils
 module A = Ast
 module P = String_of_ast
 
-let _DEBUG_ = true
+let _DEBUG_ = ref false
 
 module StringMap = Map.Make(String)
 module ExprMap = Map.Make(struct type t = A.expr let compare=compare end)
@@ -198,10 +198,10 @@ let rec unify ctx t0 t1 =
     if id0=id1 then ctx, t0 else
       (* TODO use better ordering, which favors manually created vars. *)
       let id0, id1 = min id0 id1, max id0 id1 in
-      print_endline ("Constraint: var "^id1^" => var "^id0);
+      if !_DEBUG_ then print_endline ("Constraint: var "^id1^" => var "^id0);
       add_alias id1 ([], A.TId(A.noloc, id0)) ctx, A.TId(A.noloc, id0)
   | A.TId(_, id), t | t, A.TId(_, id) ->
-      print_endline ("Constraint: var "^id^" => type "^P.string_of_type t);
+  if !_DEBUG_ then print_endline ("Constraint: var "^id^" => type "^P.string_of_type t);
       add_alias id ([], t) ctx, t
   | A.TLambda(_, t00, t01), A.TLambda(_, t10, t11) ->
     let ctx, t0 = unify ctx t00 t10 in

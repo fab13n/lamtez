@@ -100,7 +100,7 @@ data:
 
 data_product_pair: tag=TAG COLON? data=data {tag, data}
 
-data_store_item: STORE i=tag_or_id EQ d=data {i, d}
+data_store_item: STORE? i=tag_or_id EQ d=data {i, d}
 
 data_store: x=data_store_item* EOF {x}
 data_parameter: d=data EOF {d}

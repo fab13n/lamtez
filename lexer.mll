@@ -33,7 +33,8 @@ let tz_cents = "tz" d* '.' d d
 let timezone = 'Z' | ('+' d d? (':' d d)?)
 let time = d d d d '-' d d '-' d d 'T' d d ':' d d ':' d d timezone
 let b58 = ['1'-'9' 'A'-'H' 'J'-'N' 'P'-'Z' 'a'-'k' 'm'-'z']
-let sig = "sig:" b58+
+let hex = ['0'-'9' 'a'-'f']
+let sig = "sig:" hex+
 let key = "tz1" b58+
 rule read = parse
 | white {read lexbuf}

@@ -23,6 +23,7 @@ type arguments = {
   out_tz_name:    string;
   in_store:       (string*Lexing.lexbuf) option;
   out_store:      string option;
+  out_param:      string option;
   param:          string option;
   run:            bool;
   client:         string;
@@ -40,15 +41,21 @@ let parse_args() =
   let in_store   = ref None in (* store content input file name: name*lexbuf option *)
   let out_store  = ref None in (* store content output file name *)
   let param      = ref None in
+  let out_param  = ref None in
   let emb_store  = ref false in (* do we process embedded store values? *)
 
   let set_level  l ()     = match !level with LUnspecified -> level := l | _ -> failwith "Contradicatory compilation levels" in
   let set_string r s      = match !r     with None -> r     := Some s | _ -> failwith "Contradictory outputs" in
   let set_input_string s  = input := Lexing.from_string s; input_name := s in
   let set_input_file s    = input := Lexing.from_channel (open_in s); input_name := s in
-  let set_in_store_str  s = in_store := Some ("litteral", Lexing.from_string s) in
+  let set_in_store_str  s = in_store := Some ("litteral "^s, Lexing.from_string s) in
   let set_in_store_file n = in_store := Some (n, Lexing.from_channel (open_in n)) in
-  
+  let set_debug str =
+    let t = ['t', Typecheck._DEBUG_; 'x', Typecheck_ctx._DEBUG_;
+             'c', Michelson_of_intermediate._DEBUG_;
+             'i', Intermediate_of_ast._DEBUG_] in
+    let f k = try (List.assoc k t) := true with Not_found -> failwith "Debug flag not found" in
+    String.iter f (if str="all" then "txci" else str) in
 
     let spec_list = [
      "c", "compile",        Arg.Unit (set_level LMichelson),    "Compile input to Michelson";
@@ -62,9 +69,11 @@ let parse_args() =
      "r", "run",            Arg.Set    run,                     "Run the program";
      "F", "store-file",     Arg.String (set_in_store_file),     "Get storage value from file";
      "S", "store-string",   Arg.String (set_in_store_str),      "Get storage from string";
-     "P", "parameter",      Arg.String (set_string param),      "Print this parameter";
+     "p", "parameter",      Arg.String (set_string param),      "Compile this parameter";
+     "P", "parameter-output", Arg.String(set_string out_param), "Write compiled param to this file";
      "O", "store-output",   Arg.String (set_string out_store),  "Write storage data to this file";
      "C", "client",         Arg.String (set_string client),     "Set the tezos-client commnad";
+     "d", "debug",          Arg.String set_debug,               "Set debug flags";
      ] in
   let spec_variants (l, name, x, y) = ["-"^l, x, y; "-"^name, x, y; "--"^name, x, y] in
   let spec_list = List.flatten (List.map spec_variants spec_list) in
@@ -84,7 +93,8 @@ let parse_args() =
     in_ltz_name = !input_name;
     out_tz      = (match !output with None | Some "-" -> stdout | Some n -> open_out n);
     out_tz_name = (match !output with None | Some "-" -> "stdout" | Some n -> n);
-    out_store   = (match !out_store with None -> None | Some n -> Some n);
+    out_store   = !out_store;
+    out_param   = !out_param;
     in_store    = !in_store;
     run         = !run;
     param       = !param;
@@ -169,7 +179,7 @@ let parse_file a =
           if a.out_tz != stdout then close_out a.out_tz;
           log @@ "Contract written to "^a.out_tz_name;
 
-          if a.does_store then
+          if a.does_store then begin
             let store_tz = match a.in_store, m_contract.MoI.storage_init with
               | None, Some content -> content
               | Some (name, lexbuf), _ -> 
@@ -178,31 +188,44 @@ let parse_file a =
                   typed_contract int_contract m_contract lexbuf
               | None, None -> assert false
             in
-
-            let param = match a.param with
-              | None -> "Unit"
-              | Some src ->
-                  let tz = Data_of_lexbuf.parameter_of_lexbuf 
-                    typed_contract int_contract (Lexing.from_string src) in
-                  log "Compiled parameter";
-                  print_endline tz;
-                  tz
-            in
-
-            if a.does_run then begin
-              run_program a.client m_contract.MoI.code store_tz param 
-            end;
-
-            begin match a.out_store with
+            (* Write compiled program to file. *)
+            match a.out_store with
             | None when not a.does_run ->
-              log "Writing stored data to stdous";
+              log "Writing data store to stdout";
               print_endline store_tz
             | None -> ()  
             | Some n ->
-              log @@ "Writing stored data to "^n;
+              log @@ "Writing data store to "^n;
               let ch = if n="-" then stdout else open_out n in
               output_string ch store_tz
-            end
+          end;
+
+          (* Get parameter *)
+          let param = match a.param with
+            | None -> "Unit"
+            | Some src ->
+                log @@ "Compiling parameter "^src;
+                let tz = Data_of_lexbuf.parameter_of_lexbuf 
+                  typed_contract int_contract (Lexing.from_string src) in
+                tz
+          in
+
+          (* Output parameter on stdout or to file *)
+          begin match a.out_param, a.param with
+          | None, None -> ()
+          | Some f, _ ->
+            log @@ "Writing parameter to file "^f;
+            let f =  open_out f in 
+            output_string f param;
+            close_out f
+          | None, Some _ ->
+            log "Compiled parameter:";
+            print_endline param
+          end;
+
+          if a.does_run then begin
+            not_impl "running programs"
+          end;
 
       with Not_impl msg ->
         print_endline ("\nNot implemented: "^msg);

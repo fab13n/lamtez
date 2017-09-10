@@ -13,11 +13,11 @@ type typed_contract = {
   storage_init: A.expr option;
   code:         A.expr }
 
-let _DEBUG_ = true
+let _DEBUG_ = ref false
 let debug_indent = ref 0
 
 let rec typecheck_expr ctx expr =
-  if _DEBUG_ then begin
+  if !_DEBUG_ then begin
     (* print_endline ("\n"^String.make 80 '*'); *)
     print_endline (String.make (2 * !debug_indent) ' '^"Typing "^P.string_of_expr expr);
     (* print_endline ("In context: "^Ctx.string_of_t ctx); *)
@@ -58,7 +58,7 @@ let rec typecheck_expr ctx expr =
   in
   let t = Ctx.expand_type ctx t in
   let ctx = Ctx.save_type expr t ctx in
-  if _DEBUG_ then begin
+  if !_DEBUG_ then begin
     decr debug_indent;
     print_endline (String.make (2 * !debug_indent) ' '^"Result "^P.string_of_expr expr^" :: "^P.string_of_type t);
   end;

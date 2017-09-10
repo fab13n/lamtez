@@ -10,4 +10,4 @@ type operation = option (sig * data)
 | None: (if self-amount >= @fee: @data | else: fail)
 | Some signed_data:
   let sig = signed_data.0; let data = signed_data.1;
-  (if crypto-check @key sig data: @data <- data; data | else: fail))
+  (if crypto-check @key sig (crypto-hash data): @data <- data; data | else: fail))

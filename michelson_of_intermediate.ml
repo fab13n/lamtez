@@ -13,7 +13,7 @@ type contract = {
   make_storage: string -> string;
 }
 
-let _DEBUG_ =true
+let _DEBUG_ = ref false
 let debug_indent = ref 0
 
 let dup n = "D"^String.make n 'U'^"P"
@@ -50,7 +50,7 @@ let rec get_level stk v = match stk with
   | _ :: stk' -> match get_level stk' v with None -> None | Some n -> Some (n+1)
 
 let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * string) =
-  if _DEBUG_ then begin
+  if !_DEBUG_ then begin
     print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_untyped_expr ie);
     (* print_endline (String.make (2 * !debug_indent) ' '^"Compiling "^P.string_of_expr ie); *)
     incr debug_indent
@@ -91,7 +91,7 @@ let rec compile_typed_expr (stk:stack) ((ie, it): I.typed_expr) : (stack * strin
   | I.EStoreSet(i, et0, et1) -> compile_EStoreSet stk i et0 et1
   | I.ESumCase(test, cases) -> compile_ESumCase stk test cases it
   in
-  if _DEBUG_ then begin
+  if !_DEBUG_ then begin
     decr debug_indent;
     print_endline (String.make (2 * !debug_indent) ' '^"Result: "^Code_format.single_line code)
   end;

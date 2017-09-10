@@ -17,6 +17,8 @@ module I = Intermediate
 module P = String_of_ast
 module Ctx = Typecheck_ctx
 
+let _DEBUG_ = ref false
+
 let prim_translations = [
   "time", "timestamp"; "sig", "signature";
 ]
