@@ -108,7 +108,7 @@ and typecheck_ELambda ctx l id sid ebody sb =
   let ctx, tb   = Ctx.unify ctx tb tb' in
   let ctx       = Ctx.pop_evar prev ctx in
   let tlambda   = A.TLambda(A.noloc, tid, tb) in
-  match A.get_free_evars ~except:[id] ebody with
+  match A.get_free_evars ~except:(id::Standard_ctx.globals) ebody with
   | [] -> ctx, tlambda
   | env ->
     let get_type id = snd @@ typecheck_expr ctx (A.eid id) in
