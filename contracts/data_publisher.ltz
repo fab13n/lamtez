@@ -5,7 +5,7 @@ type operation = option (sig * data)
 @data :: data
 @fee  :: tez
 
-\(parameter :: operation):
+\parameter :: operation:
 ( case parameter
 | None: (if self-amount >= @fee: @data | else: fail)
 | Some signed_data:

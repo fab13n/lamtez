@@ -3,7 +3,7 @@
 @v2 :: bool = False
 @v3 :: string = "hello"
 
-\(param :: bool):
+\param :: bool:
 
 let dummy = 123;
 @v2 <- True;

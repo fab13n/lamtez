@@ -3,7 +3,7 @@
 @when_threshold_reached :: account
 @when_too_late          :: account
 
-\(p :: unit):
+\p :: unit:
 
 ( if self-now > @time_threshold:
     contract-call @when_too_late () self-balance

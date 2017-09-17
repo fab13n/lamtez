@@ -37,7 +37,7 @@ type parameter = Payment: string + Delivery: nat
 @paid_by_S :: tez
 @delivered :: nat
 
-\(parameter :: parameter):
+\parameter :: parameter:
 
 let one_day = 24 * 60 * 60;
 

@@ -2,7 +2,7 @@ type prod = Int_0 int * String_1 string * Bool_2 bool
 
 @x :: prod
 
-\(param :: nat):
+\param :: nat :: prod :
 
   let x = { Int_0:    @x.Int_0 - 1
           , String_1: @x.String_1 ^ "!"

@@ -9,7 +9,7 @@ type sum5 = Int_0_5 int + String_1_5 string + Tez_2_5 tez + Nat_3_5 nat + Bool_4
 @nat    :: nat
 @bool   :: bool
 
-\(param :: unit):
+\param :: unit:
   let x1 = ( case Int_0_1 +1
            | Int_0_1 x: Int_0_1 (x - @nat)
            );

@@ -5,7 +5,7 @@ type t_param = Register: line + Execute: nat
 @index    :: nat
 @map      :: map nat line
 
-\(p :: t_param):
+\p :: t_param:
 ( case p
 | Register line: @map <- map-update @index (Some line) @map;
                  @index <- @index + 1;

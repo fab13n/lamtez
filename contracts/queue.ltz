@@ -4,7 +4,7 @@ type data = string
 @j   :: nat
 @map :: map nat data
 
-\(parameter :: option data):
+\parameter :: option data:
 ( case parameter
 | Some data: @map <- map-update @j (Some data) @map;
              @j <- @j + 1;

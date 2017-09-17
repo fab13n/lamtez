@@ -2,7 +2,7 @@ type op = AddValue: int + RunValue: nat
 
 @values :: (list int) = (list +1 +2 +3)
 
-\(p :: op):
+\p :: op:
 ( case p
 | RunValue n: Some (list-map (\(i :: int): i + n) @values)
 | AddValue v: @values <- Cons (v, @values); None

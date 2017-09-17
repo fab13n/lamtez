@@ -1,6 +1,6 @@
 type sum2 = Int_0 int + String_1 string
 
-\(param :: unit):
+\param :: unit:
   let r = ( case Int_0 +1
           | Int_0 i:    Int_0 (i - 1)
           | String_1 s: String_1 (s^"!")

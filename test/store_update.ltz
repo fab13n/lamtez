@@ -5,7 +5,7 @@
 @v5 :: option bool
 @v6 :: option int
 
-\(p :: unit):
+\p :: unit:
 @v1 <- True;  # OK
 @v2 <- +2;  # OK
 @v3 <- 3; # KO!

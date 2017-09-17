@@ -6,7 +6,7 @@
 @broker                 :: account
 @broker_fee             :: tez
 
-\(p :: unit):
+\p :: unit:
 
 ( if
 ### If the contract is realized, don't call it again ###

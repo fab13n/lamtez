@@ -3,7 +3,7 @@ type operation = Deposit key + Withdrawal withdrawal
 
 @accounts :: map key tez
 
-\(operation::operation):
+\operation :: operation:
 ( case operation
 | Deposit key:
   let new_balance = ( case map-get key @accounts

@@ -108,7 +108,7 @@ data_parameter: d=data EOF {d}
 expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
-| LAMBDA p=parameter+ t=lambda_annot COLON e=expr_sequence {
+| LAMBDA p=separated_nonempty_list(COMMA, parameter) t=lambda_annot COLON e=expr_sequence {
   (* TODO put the lambda annot in outermost lambda *)
   let fold (pe, pt) acc = ELambda(loc $startpos $endpos, pe, pt, acc, ([], fresh_tvar())) in
   List.fold_right fold p e}
@@ -184,16 +184,14 @@ if_case:
 product_pair: tag=TAG COLON? expr=expr {tag, expr}
 
 parameter:
-| id=ID {PId id, ([], fresh_tvar ~prefix:id ())}
-/* Incompatibility with parentheses in pattern */
-| LPAREN id=ID TYPE_ANNOT t=scheme RPAREN {(PId id, t)}
-(* TODO support for irrefutable pattern (products and tuples),
- * by generating an ELet(...) functor to apply to function/letin body. *)
+/* | id=ID {PId id, ([], fresh_tvar ~prefix:id ())} */
+| p=pattern {p, ([], fresh_tvar())}
+| p=pattern TYPE_ANNOT t=scheme {p, t}
 
 pattern:
 | id=ID { PId id}
-/* | LPAREN p=separated_list(COMMA, pattern) RPAREN {PTuple p} */
-/* | LBRACE p=separated_list(COMMA, product_pattern_list) RBRACE {PProduct p} */
+| LPAREN p=separated_list(COMMA, pattern) RPAREN {PTuple p}
+| LBRACE p=separated_list(COMMA, product_pattern_list) RBRACE {PProduct p}
 
 product_pattern_list:
 | t=TAG COLON p=pattern {t, p}
