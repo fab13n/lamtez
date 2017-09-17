@@ -496,33 +496,40 @@ let compile_contract i_contract =
 
     (* TODO simplify storage if there is no contract-call *)
     let t_compiler_store, saved_stacks = Stk_S.get_all() in
-    let t_stores = I.TProduct(None, lazy [t_compiler_store; i_contract.I.storage_type]) in
+    let need_stack_store = List.length saved_stacks > 1 in
+    let t_stores = 
+      if not need_stack_store then i_contract.I.storage_type
+      else I.TProduct(None, lazy [t_compiler_store; i_contract.I.storage_type]) in
 
-    (* Piece everything together*)
+    (* Piece everything together *)
     let code =
       sprintf "parameter %s;\n" (compile_etype t_param) ^
-      sprintf "# %s\n" (String_of_intermediate.string_of_etype t_stores)^
       sprintf "storage %s;\n" (compile_etype t_stores) ^
       sprintf "return %s;\n" (compile_etype t_body) ^
-      sprintf "code { DUP; CDR; SWAP; CAR; # split %s/stores\n" v_param ^
-      sprintf "DIP { CDR }; # remove stack store\n"^
+      sprintf "code { DUP; CDR; SWAP; CAR; # split %s/store\n" v_param ^
+      (if need_stack_store then "DIP { CDR }; # remove stack store\n" else "")^
       sprintf "%s" code ^
       sprintf "DIP { DROP }; # remove %s\n" v_param ^
-      sprintf "DIP {\nUNIT;\nSAVE_STACK 0;\nPAIR;\n}; # group user/compiler stores\n"^
+      (if need_stack_store then "DIP {\nUNIT;\nSAVE_STACK 0;\nPAIR;\n}; # group user*stack stores\n" else "")^
       sprintf "PAIR; # group result and store\n" ^
       sprintf "}\n"
     in
 
-    let storage_init = match i_contract.I.storage_init with None -> None | Some et_user_store ->
-      (* Actual storage is the product of stack saving store and user-defined store. *)
+    let storage_init = match i_contract.I.storage_init, need_stack_store with
+    | None, _ -> None (* No init data *)
+    | Some et_user_store, false -> Some (compile_data et_user_store) (* No stack store *)
+    | Some et_user_store, true ->
+      (* Storage is the product of stack saving store and user-defined store. *)
       let et_unit = I.EProduct[], I.TProduct(Some("unit", []), lazy []) in
       let et_compiler_store = I.ESum(0, List.length saved_stacks, et_unit), t_compiler_store in
       let et_stores = I.EProduct[et_compiler_store; et_user_store], t_stores in
-      Some (compile_data et_stores) in
+      Some (compile_data et_stores)
+    in
     
     let n = List.length saved_stacks in
-    let make_storage user_storage =
-      sprintf "(Pair %s %s)\n" (CCmp.sum_data 0 n "Unit") user_storage
+    let make_storage = if need_stack_store then
+      (fun user_storage -> sprintf "(Pair %s %s)\n" (CCmp.sum_data 0 n "Unit") user_storage)
+      else (fun x  -> x)
     in
 
     let code = patch_stack_store_operations code in
