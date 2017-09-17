@@ -1,6 +1,8 @@
 
 *.old
 *.byte
+\#*
+.\#*
 #*
 .#*
 _build/
@@ -11,3 +13,6 @@ notes.md
 scratch.ml
 lamtez.d
 lamtez
+michelson/*.param
+michelson/*.data
+tezos-client-help.txt
