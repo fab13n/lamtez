@@ -1,47 +1,82 @@
 lamtez: a typed lambda-calculus compiling to Tezos Michelson VM
 ================================================================
 
-This is a hobby project, primarily intended to re-familiarise myself
-with OCaml, and to dive into Michelson while having fun. It is
-released under MIT license, with no guaranty of any kind (among other,
-there's no proof that it compiles to sound nor correct Michelson
-code).
+Lamtez is Domain-Specific Language for smart contracts, and its compiler to 
+Michelson, [Tezos](http://www.tezos.ch)' virtual machine for smart contracts
+execution. 
 
-I'm interested in feedbacks anyway, if you play with it.
+It is released under the MIT license, with no guaranty of any kind (among other, 
+there's no proof that it compiles to sound nor correct Michelson code). I'm 
+interested in feedbacks anyway, if you experiment with it.
+
+## Building
+
+The compiler is written in OCaml; the build process relies on `ocamlbuild`, 
+and it depends on the parser generator [menhir](http://gallium.inria.fr/~fpottier/menhir/). 
+If [opam](https://opam.ocaml.org/) is installed on your system, `opam install 
+ocamlbuild menhir` should be enough to get a building environment. If you 
+compiled Tezos from sources, Lamtez requirements are a subset of Tezos'. 
+
+## Examples
+
+If you would rather look at source code examples first, before reading the 
+fine manual, you can go and check 
+[EXAMPLES.md](https://github.com/fab13n/lamtez/blob/master/EXAMPLES.md). It reimplements
+contract exmaples from [http://michelson-lang.com] and 
+[the Michelson specification](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md).
 
 ## General considerations on the language
 
-The language is strongly influenced by ML: very functional, relying
-heavily on sum-types and product-types, statically typed with type inference.
+The language is strongly influenced by ML dialects OCaml and Haskell: mostly 
+functional, relying heavily on sum-types and product-types, statically typed 
+with type inference. It also composes with some limitations in Michelson. Most 
+of the limitations in Michelson language follow from the following 
+assumptions: 
 
-Whitespaces are not significant except to separate tokens, indentation
-is not significant, comments start with a `#` sign and run until the
-end of the current line.
+* Most useful smart contracts will be rather simple, commpared to typical
+  programs written be profesionnal developers in general-purpose languages;
 
-Compared to code written directly in Michelson, Lamtez contracts
-offer higher-level features:
+* A very high level of confidence in contracts correctness will be required. 
+  Given how finding and exploiting bugs in smart contracts can be turned into 
+  tokens and actual money, every contract handling significant amounts of 
+  money will be thoroughly reviewed and attacked by black-het hackers, several 
+  of them smarter than the contract's author and white-hat reviewers.
 
-* Sum and product types of arbitrary size and with arbitrary
-  field/case names. In Michelson, sums with more than two alternatives
-  and products with more than two fields have to be encoded with nested
-  alternatives and pairs, thus quickly becoming hard to read for humans.
+* Tezos being self-amending, it's better to start with a very limited language 
+  and progressively add empirically needed features, rather than start with 
+  many bells and whistles: some of them might prove less secure than 
+  anticipated, or not as useful as it first seemed, but each of them making 
+  formal proofs more tedious or complicated to produce. 
 
-* lexically scoped variables: keeping track of what is at which level
-  of the stack is cumbersome when writing a program, it makes reading
-  someone else's contracts dreadful. Being able to name things rather
-  than shuffling them on a stack greatly improves contract readability.
+Michelson closely ressembles a simply-typed lambda calculus, without native
+recursivity nor proper closures; drastic limitations also exist on the ability
+for a contract to call other contracts.
 
-* actual function closures (NOT YET IMPLEMENTED): a function can
-  use variables declared outside of it.
+Compared to hand-written Michelson, Lamtez contracts offer higher-level 
+features: 
 
-* type inference: as most ML dialects, lamtez uses a variant of the
-  W algorithm to guess types with very little user annotations. However,
-  contrary to ML, it expects the final contract not to be polymorphic,
-  as Michelson doesn't support it. So you might get some "Add more type
-  annotations" errors. Annotating function parameters is sufficient,
-  although often not necessary, to ensure a monomorphic contract type.
-  (inner polymorphic functions are technically possible, but
-  NOT YET IMPLEMENTED)
+* Sum and product types of arbitrary size and with arbitrary field/case names. 
+  In Michelson, sums with more than two alternatives and products with more 
+  than two fields have to be encoded with nested alternatives and pairs, thus 
+  quickly becoming hard to read for humans. 
+
+* lexically scoped variables: keeping track of what is at which level of the 
+  stack is cumbersome when writing a program, and it makes reading someone 
+  else's contracts dreadful. Being able to name things rather than shuffling 
+  them on a stack greatly improves contract readability. 
+
+* Limited support for closures: a function can use variables declared outside 
+  of it. This feature is however currently limited, as it is tedious to 
+  abstract away the types of the variables captured by closures (this might
+  change if closures prove to be very useful in typical smart contracts).
+
+* type inference: as most ML dialects, lamtez uses a variant of the W 
+  algorithm to guess types with very little user annotations. However, 
+  contrary to ML, it expects the final contract not to be polymorphic, as 
+  Michelson doesn't support it. So you might get some "Add more type 
+  annotations" errors. Annotating function parameters is sufficient, although 
+  often not necessary, to ensure a monomorphic contract type. (inner 
+  polymorphic functions are technically possible, but NOT YET IMPLEMENTED) 
 
 * storage management: instead of manually managing the storage, variables
   prefixed with `@` are declared and stored in it, and can be updated
@@ -62,17 +97,26 @@ saving, as some slots won't be used after the contract call anymore,
 and two invocations with the same stack types above them should share
 their slot)
 
-Lamtez is mostly functional. It has two kinds of side effects: storage
-updates and calls to other contracts. Normally, functional programming
-languages will only let you touch side effects with a ten foot pole
-(although they call that pole a "monad"; wielding a monad towards unfamiliar
-developers scares them about as much as doing so with an actual ten foot pole).
+Lamtez is mostly functional. It has two kinds of side effects: storage updates 
+and calls to other contracts. Normally, functional programming languages will 
+only let you touch side effects with a ten foot pole. They typically call that 
+pole a "monad"; wielding a monad towards unfamiliar developers scares them 
+about as much as doing so with an actual ten foot pole. 
 
-Lamtez doesn't explicitly supports monads, but it enforces some (coarser)
-constraints about where side effects are accepted. Namely, these operations
-can't happen in an inner function (we couldn't keep track of them without
-monads then), nor in places where evaluation order isn't intuitively
-obvious: not in tuples/products, not in function arguments.
+Lamtez doesn't explicitly supports monads, but it enforces some (coarser) 
+constraints about where side effects are accepted. Namely, these operations 
+can't happen in an inner function (we couldn't keep track of them without 
+monads then), nor in places where evaluation order isn't intuitively obvious: 
+not in tuples/products, not in function arguments. 
+
+Whitespaces are not significant except to separate tokens, indentation is not 
+significant, comments start with a `#` sign and run until the end of the 
+current line. 
+
+Lamtez is not proved correct in any way; the proper way to ensure any 
+correctness property is by working directly on the generated Michelson code. 
+It is annotated and commented, among other with the stack's state after each 
+instruction, in order to help analysis.
 
 ## Anatomy of a contract
 
@@ -100,35 +144,34 @@ A contract is composed of:
 
 ### Functions and function applications
 
-In languages inspired by lambda calculus, functions are traditionally
-introduced with a lowercase lambda "λ". Since it's cumbersome to type
-on most keyboards, we adopt Haskell's convention of using the
-backslash character "\" instead.
+In languages inspired by lambda calculus, functions are traditionally 
+introduced with a lowercase lambda "λ". Since it's cumbersome to type on most 
+keyboards, we adopt Haskell's convention of using the backslash character "\" 
+instead. 
 
-The complete syntax for a function is `\x: body`. Parameters can be
-annotated with types, through the `::` infix operator:
-`\(x :: nat): body`.
+The complete syntax for a function is `\x: body`. Parameters can be annotated 
+with types, through the `::` infix operator: `\(x :: nat): body`. 
 
-Lamtez supports multi argument functions, through currying (nested functions
-returning functions, a standard idiom in λ-calcullus inspired languages)
-(NOT YET IMPLEMENTED for user-defined functions; pass products instead, for now).
+Lamtez supports multi argument functions, through currying (nested functions 
+returning functions, a standard idiom in λ-calcullus inspired languages) (NOT 
+YET IMPLEMENTED for user-defined functions; pass products instead, for now). 
 
-Functions are applied the ML/λ-calculus way, by putting the arguments
-after the function, without parentheses nor separating commas, i.e.
-what's written `f(x, y)` in C-inspired syntaxes is written `f x y`.
-Application is left-associative, i.e. `f x y z` is read as
-`(((f x) y) z)`. Parentheses are still needed for nested function applications,
-e.g `f(g(x), g(y))` in C would give `f (g x) (g y)`.
+Functions are applied the ML/λ-calculus way, by putting the arguments after 
+the function, without parentheses nor separating commas, i.e. what's written 
+`f(x, y)` in C-inspired syntaxes is written `f x y`. Application is 
+left-associative, i.e. `f x y z` is read as `(((f x) y) z)`. Parentheses are 
+still needed for nested function applications, e.g `f(g(x), g(y))` in C would 
+give `f (g x) (g y)`. 
 
-Lamtez performs type inference, i.e. if there are enough hints in the
-code, it will correctly guess the types which the user omitted to
-write. However, unlike most other ML-family languages, polymorphism is
-not allowed, because the underlying Michelson VM doesn't support it
-(TODO: inner lambdas could be polymorphic, as long as it doesn't show
-on the outside type. Not sure hwo useful that would be in practice).
-So if the type inference algorithm determines that a function's best
-type is, say, `∀a: list a -> nat`, the compiler will emit an error
-and demand more type annotations rather than accepting
+Lamtez performs type inference, i.e. if there are enough hints in the code, it 
+will correctly guess the types which the user omitted to write. However, 
+unlike most other ML-family languages, polymorphism is not allowed, because 
+the underlying Michelson VM doesn't support it (TODO: inner lambdas could be 
+polymorphic, as long as it doesn't show on the outside type. Not sure hwo 
+useful that would be in practice). So if the type inference algorithm 
+determines that a function's best type is, say, `∀a: list a -> nat`, the 
+compiler will emit an error and demand more type annotations rather than 
+accepting 
 
 Examples:
 
@@ -138,8 +181,8 @@ Examples:
     \(x: nat) y: x * y
     \parameter: ((), map-update parameter (Some self-amount) @store)
 
-For instance, the simplest contract, identity, which does nothing, just takes
-a unit parameter and returns a unit result, is written below:
+For instance, the simplest contract, identity, which does nothing, just takes 
+a unit parameter and returns a unit result, is written below: 
 
     \(p :: unit): p
 
@@ -151,20 +194,21 @@ The barely more interesting one, which adds one to its parameter, is:
 
 Lamtez supports the same literals as Michelson:
 
-* to distinguish naturals from positive integers, the later have to
-  be prefixed with a `+` sign, so `42` is a natural number and `+42`
-  is typed as an integer.
+* to distinguish naturals from positive integers, the later have to be 
+  prefixed with a `+` sign, so `42` is a natural number and `+42` is typed as 
+  an integer. 
 
 * dates are represented with the ISO format, without surrounding quotes:
   `2017-08-22T22:00:00Z`, `2017-08-22T22:00:00+01:00`
 
-* Tez amounts are represented with a `tz` prefix and optional cents:
-  `tz1`, `tz1.00`, `tz.05` (TODO: support `_` characters). If there are
-  cents, they must be two digits long: `tz0.`, `tz0.1` or `tz.100` are illegal.
+* Tez amounts are represented with a `tz` prefix and optional cents: `tz1`, 
+  `tz1.00`, `tz.05` (TODO: support `_` characters). If there are cents, they 
+  must be two digits long: `tz0.`, `tz0.1` or `tz.100` are illegal. 
 
-* Signatures are represented with a `sig:` prefixing the base58 hash TODO
+* Signatures are represented with a `sig:` prefixing the base58 hash.
 
-* Keys are represented with a `key:` prefixing the base58 hash TODO
+* Key hashes are written directly, without surrounding quotes; they are by 
+  their `tz1` followed by a base58 hash.
 
 ### Variables
 
@@ -175,22 +219,23 @@ leave spaces around `-` when used as a substraction infix operator.
 
 Examples: `foo, bar0, contract-call, _foo, foo_bar, fooBar`
 
-(In the future I might get rid of dashes in names, if there's a decent
-namespace system instead)
+(In the future I might get rid of dashes in names, if there's a decent 
+namespace system instead) 
 
 ### Let: local variables
 
 ML-style local variables, `let x=a; b` evaluates `b` with `x` set to `a`.
 Equivalent, execution-wise, to `(\x:b) a`.
+
 Example:
 
     let x = 32;
     let y = 10;
     x + y
 
-Lamtez being mostly functional, you can't update the value stored in a
-variable; however, and as often done in ML dialect, you can shadow a variable
-with a new variable  of the same name:
+Lamtez being mostly functional, you can't update the value stored in a 
+variable; however, and as often done in ML dialect, you can shadow a variable 
+with a new variable of the same name: 
 
     let x = 10;
     let x = 20;  # From here you can't refer to the first `x` variable anymore
@@ -198,16 +243,16 @@ with a new variable  of the same name:
 
 ### Tuples (unlabelled cartesian products)
 
-Whereas Michelson supports pairs, Lamtez supports tuples of length
-bigger than 2 (and encodes them as nested pairs). Such tuples are
-surrounded with parentheses, and elements are separated with commas.
+Whereas Michelson supports pairs, Lamtez supports tuples of length bigger than 
+2 (and encodes them as nested pairs). Such tuples are surrounded with 
+parentheses, and elements are separated with commas. 
 
-Elements are extracted from a tuple with the suffix `.n`, where `n` is
-a litteral positive integer, 0-indexed. The extractor suffix binds
-tighter than function application (same as most ML-family languages).
+Elements are extracted from a tuple with the suffix `.n`, where `n` is a 
+litteral positive integer, 0-indexed. The extractor suffix binds tighter than 
+function application (same as most ML-family languages). 
 
-Tuples are encoded as balanced trees, i.e. so that the length of paths in
-`n`-products grows as `log2(n)`. This can easily be changed if desired.
+Tuples are encoded as balanced trees, i.e. so that the length of paths in 
+`n`-products grows as `log2(n)`. This can easily be changed if desired. 
 
 Example:
 
@@ -375,6 +420,44 @@ updated value and perform the update from outside:
 Instead of performing storage updates in function arguments or products,
 perform them before in a `let` expression.
 
+### Loops
+
+Loops are not very functional; however, in a languge that doesn't fully 
+support closures and doesn't support contract calls from inside lambdas, 
+access to the `LOOP` Michelson primitive is necessary. Although this isn't 
+implemented, my intention is to introduce a syntax of the form  
+`loop (<var*>) = (<expr*>) while <condition> else (<expr*>)`:
+
+* the `<expr*>` and `<var*>` lists have the same sizes;
+* at step 0, the variables are assigned the values after the `else`;
+* as long as `<condition>` is true, an iteration of the loop is performed: 
+    * the expressions before the `while` are evaluated, with the current
+      assignments for `<var*>`;
+    * the result is assigned to `<var*>`, before a new condition checking,
+      and maybe iteration, is performed.
+
+This feature would be much more practical to use with _irrefutable patterns_, 
+i.e. expressions of the form `let x, y = p; e(x, y)` as shortcuts for 
+`let x=p.0; let y=p.1; e(x, y)`. Tuples and products can be destructured this 
+way; sum types should not, as in most situations there are several possible 
+cases to take into account. This would make the contract fail if the proper 
+sum case isn't present, and we want possible causes of failure to be highly 
+visible. Hence there will probably never be any support for syntaxes like 
+`let Some x = expr0; expr1`. 
+
+As an example, here's what factorial would look like with the loop operator:
+
+    \n: let (fact, _) = loop (acc, i) = (acc*i, i-1) while i > 0 else (1, n)
+
+Some syntactic permissiveness might be granted for the order in which `loop`, 
+`while` and `else` elements are ordered:
+
+    \n: let (fact, _) = loop (acc, i) = (acc*i, i-1) while i > 0 else (1, n)
+    \n: let (fact, _) = while i > 0 loop (acc, i) = (acc*i, i-1) else (1, n)
+    \n: let (fact, _) = else (1, n) while i > 0 loop (acc, i) = (acc*i, i-1)
+
+The first and second versions seem more naturally readable, the last one follows
+"natural evaluation order" more closely.
 
 ### Type syntax
 

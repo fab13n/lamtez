@@ -82,6 +82,10 @@ it would have been nice to write `Some (sig, data): ...`.
 
 ## User accounts
 
+Nothing special about this contract either; it's made more readable than its 
+Michelson counterpart thanks to named operations and operation fields, and 
+thanks to the store update operations separated from result computation. 
+
     type withdrawal = Key: key * Amount: tez * Signature: signature
     type operation = Deposit key + Withdrawal withdrawal
 
@@ -101,12 +105,15 @@ it would have been nice to write `Some (sig, data): ...`.
                     | Some balance:
                         (if balance < w.Amount: fail);  # withdrawal denied (insufficient funds)
                         let new_balance = ( case balance = w.Amount
-                                          | True:  None                       # Delete empty account
-                                          | False: Some (balance - w.Amount)  # update account);
+                                          | True:  None                        # Delete empty account
+                                          | False: Some (balance - w.Amount)); # update account
                         @accounts <- map-update w.Key new_balance @accounts;
                         contract-call (contract-get w.Key) () w.Amount))
 
 ## King of Tez
+
+A contract that's all about updating the store (plus a very simple condition 
+checking). 
 
     @royal_key         :: key
     @enthronement_date :: time
@@ -148,25 +155,31 @@ First, mapping a function on a list:
     let f = \x: x+1;
     list-map f param
 
-With the following example, something noteworthy is happening:
-although Lamtez handles the storage for you, so you don't have to
-separate it from the parameter at the beginning nor bundle it with the
-result at the end, this isn't true anymore when creating contracts:
-these take as parameter a function of type `forall p r s: (p*s) ->
-(r*s)`.
+With the following example, something noteworthy is happening. When writing 
+the current contract, Lamtez handles the boilerplate related to storage access 
+and update. However, when a contract creates another contract, the later 
+doesn't benefit from those features. It is initialized with a function of type 
+`∀ parameter storage result: (parameter×storage) → (result×storage)`, and the 
+manipulation of storage fields must be performed explicitly by the function 
+body. 
+
+Here, within the lambda, `x` is bound to a `int×unit` pair, applies the map 
+operation on the first half `x.0`, then pairs the result with a unit term 
+`()`. 
+
 
     type t = (list int * unit)
 
     \(param :: unit):
 
-    let map_add1 = \(x :: t): (list-map (\y: y+1) x.0, x.1);
+    let map_add1 = \(x :: t): (list-map (\y: y+1) x.0, ());
     let key = tz1SuakBpFdG9b4twyfrSMqZzruxhpMeSrE5;
     contract-create key None False False self-amount map_add1
 
 ## Parameterizable payment contract
 
-This one is tedious to follow in Michelson, quite a bit of stack
-shuffling!  With named variables and types, here's my version:
+This one is tedious to follow in Michelson, quite a bit of stack shuffling! 
+With named variables and labelled types, here's my version: 
 
     type line    = Title: string * Amount: tez * Destination: contract unit unit
     type t_param = Register: line + Execute: nat
@@ -187,7 +200,7 @@ shuffling!  With named variables and types, here's my version:
                  | Some line: @map <- map-update i None @map;
                               contract-call line.Destination () line.Amount))
 
-My tz0.02 about this contract:
+My `tz0.02` about this contract:
 
 * my guess is, the approving contract returns the index number because
   it would be too much hassle to give it a storage slot. Having that
@@ -203,7 +216,7 @@ My tz0.02 about this contract:
   we refer to lines by their name rather than by number? This would
   imply to check their unicity, and to use them as map keys.
 
-~
+Here's a sketch of what this different version would look like:
 
     type t_param = Register: (string * account * tez) + Execute: string
 
@@ -227,13 +240,13 @@ My tz0.02 about this contract:
 
 ### Reservoir
 
-The
-[official Michelson documentation](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md)
-also comes with some smart contract examples. The simplest non-trivial
-one is a reservoir contract: there's a time limit and a money limit;
-if the contract gets more than the money threshold before the time
-threshold elapse, then the money goes to an account; otherwise it goes
-to another.
+The [official Michelson 
+documentation](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md) 
+also comes with some smart contract examples. The simplest non-trivial one is 
+a reservoir contract (think of it as a simplified crowdfunding contract): 
+there's a time limit and a money limit; if the contract gets more than the 
+money threshold before the time threshold elapse, then the money goes to an 
+account; otherwise it goes to another (presumably for refunds).
 
     @time_threshold         :: time
     @amount_threshold       :: tez
@@ -248,10 +261,12 @@ to another.
         contract-call @when_threshold_reached () self-balance
     | else: () )
 
-To use such a contract on a Kickstarter-like fundraising campaign, one would
-need to keep track of whom paid what, to reimbourse donators if the threshold
-is missed. Also, one would probably want to let the campaign continue until
-the limit date, even if the money threshold is reached before.
+For a crowdfunding contract, we should remember who contributed what; and if 
+the money threshold faild to be reached within the time limit, then refunds 
+should be sent to the original contributors. However, this would require 
+a support for loops, since 
+
+
 
 ### Scrutable reservoir
 
