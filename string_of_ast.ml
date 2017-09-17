@@ -58,6 +58,16 @@ let rec string_of_lit = function
 let string_of_collection_kind = function
   | CSet -> "set" | CList -> "list" | CMap -> "map" 
 
+let rec string_of_pattern = function
+  | PAny -> "_"
+  | PId id -> id
+  | PTuple list -> "("^sep_list ", " string_of_pattern list^")"
+  | PProduct list -> 
+    let rec f = function
+    | (x, PId x') when x=x' -> x
+    | (tag, p) -> tag^": "^string_of_pattern p in
+    "{"^sep_list "; " f list^"}"
+
 let rec string_of_expr =
   let soe = string_of_expr in
   let sos = string_of_scheme in
@@ -69,16 +79,17 @@ let rec string_of_expr =
   | ELambda(_, _, _, _, tr) as e ->
     let type_annot = if is_fresh_tvar (snd tr) then "" else " :: "^sos tr in
     let rec f = function
-      | ELambda(_, v, tv, e, te) ->
-        let p = if is_fresh_tvar (snd tv) then v else "("^v^" :: "^sos tv^")" in
+      | ELambda(_, p, tp, e, te) ->
+        let p = if is_fresh_tvar (snd tp) then (string_of_pattern p) 
+          else "("^string_of_pattern p^" :: "^sos tp^")" in
         (* let t = if is_fresh_tvar te then " :: "^sos te else "" in *)
         p^" "^f e
       | e -> type_annot^": "^soe e in
     "(λ"^f e^")"
-  | ELet(_, v, t, e0, e1) ->
+  | ELet(_, p, t, e0, e1) ->
     if is_fresh_tvar (snd t)
-    then "let "^v^" = "^soe e0^"; "^soe e1
-    else "let "^v^" :: "^sos t^" = "^soe e0^"; "^soe e1
+    then "let "^string_of_pattern p^" = "^soe e0^"; "^soe e1
+    else "let "^string_of_pattern p^" :: "^sos t^" = "^soe e0^"; "^soe e1
   | EApp _ as e -> let rec f = function EApp(_, a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
   | ETuple(_, list) -> "(" ^ sep_list ", " soe list ^ ")"
   | ESequence(_, list) -> "(" ^ sep_list "; " soe list ^ ")"

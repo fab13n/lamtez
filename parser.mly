@@ -174,8 +174,8 @@ expr_sequence: l=separated_nonempty_list(SEMICOLON, expr) {
 tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}
 
 sum_case: 
-| tag=TAG COLON expr=expr_sequence {(tag, (fresh_var(), expr))}
-| tag=TAG var=ID COLON? expr=expr_sequence {(tag, (var, expr))}
+| tag=TAG COLON expr=expr_sequence {(tag, (PAny, expr))}
+| tag=TAG p=pattern COLON? expr=expr_sequence {(tag, (p, expr))}
 
 if_case:
 | cond=expr COLON body=expr_sequence {(cond, body)}
@@ -184,7 +184,16 @@ if_case:
 product_pair: tag=TAG COLON? expr=expr {tag, expr}
 
 parameter:
-| id=ID {id, ([], fresh_tvar ~prefix:id ())}
-| LPAREN id=ID TYPE_ANNOT t=scheme RPAREN {(id, t)}
+| id=ID {PId id, ([], fresh_tvar ~prefix:id ())}
+/* Incompatibility with parentheses in pattern */
+| LPAREN id=ID TYPE_ANNOT t=scheme RPAREN {(PId id, t)}
 (* TODO support for irrefutable pattern (products and tuples),
  * by generating an ELet(...) functor to apply to function/letin body. *)
+
+pattern:
+| id=ID { PId id}
+/* | LPAREN p=separated_list(COMMA, pattern) RPAREN {PTuple p} */
+/* | LBRACE p=separated_list(COMMA, product_pattern_list) RBRACE {PProduct p} */
+
+product_pattern_list:
+| t=TAG COLON p=pattern {t, p}

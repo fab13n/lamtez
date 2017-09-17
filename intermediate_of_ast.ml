@@ -96,17 +96,20 @@ let rec compile_expr ctx e =
   | A.EId(_, id) -> I.EId id, it
 
   | A.ELambda _ as e ->
-    let rec get = function A.ELambda(_, a, _, b, _) -> let p, t = get b in a::p, t | t -> [], t in
-    let param_names, body = get e in
-    let param_types = match it with
-    | I.TLambda(p, _) -> p (* TODO multi-parameter functions will always be closures. *)
-    | I.TPrim("closure", [_; p; _]) -> [p] 
-    | _ -> unsound "bad lambda type" in
-    let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
-    I.ELambda(typed_names, c body), it
+    let rec get = function A.ELambda(_, p, _, b, _) ->
+      let a = match p with A.PId a -> a | _ -> not_impl"lambda patterns" in
+      let p, t = get b in a::p, t | t -> [], t in
+      let param_names, body = get e in
+      let param_types = match it with
+      | I.TLambda(p, _) -> p (* TODO multi-parameter functions will always be closures. *)
+      | I.TPrim("closure", [_; p; _]) -> [p] 
+      | _ -> unsound "bad lambda type" in
+      let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
+      I.ELambda(typed_names, c body), it
 
-  | A.ELet(_, id, t, e0, e1) ->
+  | A.ELet(_, p, t, e0, e1) ->
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
+    let id = match p with A.PId id -> id | _ -> not_impl "let patterns" in
     I.ELet(id, te0, te1), it1
 
   | A.ESequence(_, list) ->
@@ -160,8 +163,11 @@ let rec compile_expr ctx e =
     let t_test = Ctx.retrieve_type ctx e_test in
     let d_cases = get_sum_decl_cases ctx t_test in
     let rec f e_cases (d_tag, d_type) =
-      let e_var, e_expr = List.assoc d_tag e_cases in
-      e_var, compile_etype ctx d_type, c e_expr
+      let e_pattern, e_expr = List.assoc d_tag e_cases in
+      match e_pattern with
+      | A.PId e_var -> e_var, compile_etype ctx d_type, c e_expr
+      | A.PAny -> A.fresh_var(), compile_etype ctx d_type, c e_expr
+      | _ -> not_impl "sum pattern" 
     in
     I.ESumCase(c e_test, List.map (f e_cases) d_cases), it
 

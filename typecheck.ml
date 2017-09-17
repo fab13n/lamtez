@@ -97,12 +97,13 @@ and typecheck_EColl_CSet ctx elts =
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx l id sid ebody sb =
+and typecheck_ELambda ctx l pattern sid ebody sb =
   (* TODO fail if id is bound by default ctx? *)
   (* Type e supposing that id has type t_arg. *)
   let tid, tb = match sid, sb with
     | ([], tid), ([], tb) -> tid, tb 
     | _ -> unsupported "polymorphic types" in
+  let id = match pattern with A.PId id -> id | _ -> not_impl "lambda pattern" in
   let ctx, prev = Ctx.push_evar id sid ctx in
   let ctx, tb'  = typecheck_expr ctx ebody in
   let ctx, tb   = Ctx.unify ctx tb tb' in
@@ -115,12 +116,13 @@ and typecheck_ELambda ctx l id sid ebody sb =
     let tenv = List.map get_type env in 
     ctx, A.tapp "closure" [A.ttuple tenv; tid; tb]
 
-and typecheck_ELetIn ctx id s_id e0 e1 =
+and typecheck_ELetIn ctx pattern s_id e0 e1 =
   if fst s_id <> [] then unsupported "Polymorphic types";
   (* TODO fail if id is bound by default ctx? *)
   let ctx, t0 = typecheck_expr ctx e0 in
   let ctx, t0 = Ctx.unify ctx (snd s_id) t0 in
   (* TODO: generalize t0? *)
+  let id = match pattern with A.PId id -> id | _ -> not_impl "let pattern" in
   let ctx, prev = Ctx.push_evar id ([], t0) ctx in
   let ctx, t1 = typecheck_expr ctx e1 in
   let ctx = Ctx.pop_evar prev ctx in
@@ -181,12 +183,17 @@ and typecheck_ESumCase ctx e e_cases =
   let ctx, _ = Ctx.unify ctx t_sum t_e in
   (* TODO check that declaration and case domains are equal. *)
   let ctx, t_pairs = list_fold_map
-    (fun ctx (tag, (v, e)) ->
+    (fun ctx (tag, (p, e)) ->
       (* TODO fail if v is bound by default ctx? *)
-      let ctx, prev = Ctx.push_evar v ([], List.assoc tag case_types) ctx in
-      let ctx, t = typecheck_expr ctx e in
-      let ctx = Ctx.pop_evar prev ctx in
-      ctx, (tag, t))
+      match p with 
+      | A.PId v -> 
+        let ctx, prev = Ctx.push_evar v ([], List.assoc tag case_types) ctx in
+        let ctx, t = typecheck_expr ctx e in
+        let ctx = Ctx.pop_evar prev ctx in
+        ctx, (tag, t)
+      | A.PAny -> 
+        let ctx, t = typecheck_expr ctx e in ctx, (tag, t)
+      | _ -> not_impl "sum-case pattern")
     ctx e_cases in
   let ctx, t = List.fold_left
     (fun (ctx, t) (tag, t') -> Ctx.unify ctx t t')
@@ -414,7 +421,7 @@ let check_contract_calls expr =
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
   | A.ESequence(_, list)                  -> List.exists f list
   | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, "call-contract", _, _, _)-> false
+  | A.ELambda(_, A.PId "call-contract", _, _, _)-> false
   | A.ELambda(_, _, _, e, _)              -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
   | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
@@ -423,7 +430,7 @@ let check_contract_calls expr =
   | A.ETuple(_, list)                     -> forbidden list "tuples"
   | A.EProduct(_, list)                   -> forbidden (List.map snd list) "product types"
   | A.ETupleGet(_, e, _)                  -> f e
-  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, A.PId "call-contract", _, _, _) -> false
   | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
   in let _ = f expr in
   ()
@@ -447,7 +454,7 @@ let check_store_set expr =
   | A.ETuple(_, list)                   -> forbidden list "tuples"
   | A.ETupleGet(_, e, _)                -> f e
   | A.EProduct(_, list)                 -> forbidden (List.map snd list) "product types"
-  | A.ELet(_, "call-contract", _, _, _) -> false
+  | A.ELet(_, A.PId"call-contract", _, _, _) -> false
   | A.ELet(_, _, _, e0, e1)             -> f e0 || f e1
   in let _ = f expr in
   ()

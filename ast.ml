@@ -37,12 +37,19 @@ type literal =
 
 type collection_kind = CSet | CMap | CList
 
+(* Irrefutable pattern. *)
+type pattern =
+  | PAny
+  | PId of evar
+  | PTuple of pattern list
+  | PProduct of (tag*pattern) list 
+
 type expr =
   | ELit    of loc * literal
   | EColl   of loc * collection_kind * expr list
   | EId     of loc * evar
-  | ELambda of loc * evar * scheme * expr * scheme
-  | ELet    of loc * evar * scheme * expr * expr
+  | ELambda of loc * pattern * scheme * expr * scheme
+  | ELet    of loc * pattern * scheme * expr * expr
   | ESequence of loc * expr list
   | EApp    of loc * expr * expr
 
@@ -55,7 +62,7 @@ type expr =
   | EStoreSet   of loc * tag * expr * expr
 
   | ESum     of loc * tag * expr
-  | ESumCase of loc * expr * (tag * (evar * expr)) list
+  | ESumCase of loc * expr * (tag * (pattern * expr)) list
 
   | EBinOp of loc * expr * binOp * expr
   | EUnOp  of loc * unOp * expr
@@ -148,16 +155,16 @@ let eif ?(loc=noloc) list = (* TODO handle locs better *)
   let rec f = function
     | [cond, body_then; ESum(_, "True", _), body_else] -> 
       ESumCase(loc, cond, 
-               ["True", (fresh_var(), body_then);
-                "False",(fresh_var(), body_else)])
+               ["True", (PAny, body_then);
+                "False",(PAny, body_else)])
     | [cond, body] -> 
       ESumCase(loc, cond, 
-               ["True", (fresh_var(), body);
-                "False",(fresh_var(), eunit)])
+               ["True", (PAny, body);
+                "False",(PAny, eunit)])
     | (cond, body_then) :: rest -> 
       ESumCase(loc, cond, 
-               ["True", (fresh_var(), body_then);
-                "False",(fresh_var(), f rest)])
+               ["True", (PAny, body_then);
+                "False",(PAny, f rest)])
     | [] -> raise (Invalid_argument "eif")
   in
   f list 
@@ -168,8 +175,13 @@ let fresh_vars, fresh_tvars, fresh_evars =
     List.rev (f (g ~prefix) [] n) in
   repeat fresh_var, repeat fresh_tvar, repeat fresh_evar
 
+module S = Set.Make(String)
+let (+) = S.union
+and (-) s e = S.remove e s
+and (--) s0 s1 = S.diff s0 s1
+and (<<) s e = S.mem e s
+
 let get_free_tvars ?except t =
-  let module S = Set.Make(String) in
   let (+) = S.union
   and (--) s0 s1 = S.diff s0 s1 in
   let rec f = function
@@ -184,16 +196,18 @@ let get_free_tvars ?except t =
     | Some exceptions -> f t -- S.of_list exceptions
   in List.sort compare @@ S.elements set
 
+let rec pattern_binds = function
+  | PAny -> S.empty
+  | PId id -> S.singleton id
+  | PTuple list -> List.fold_left (fun acc p -> acc + pattern_binds p) S.empty list
+  | PProduct list -> List.fold_left (fun acc (_, p) -> acc + pattern_binds p) S.empty list
+
 let get_free_evars ?except e =
-  let module S = Set.Make(String) in
-  let (+) = S.union
-  and (-) s e = S.remove e s
-  and (--) s0 s1 = S.diff s0 s1 in
   let rec f = function
     | EId(_, id) -> S.singleton id
     | ELit _ -> S.empty
-    | ELambda(_, v, _, e, _) -> f e - v
-    | ELet(_, v, _, e0, e1) -> f e0 + (f e1 - v)
+    | ELambda(_, p, _, e, _) -> f e -- pattern_binds p
+    | ELet(_, p, _, e0, e1) -> f e0 + (f e1 -- pattern_binds p)
     | EColl(_, _, list) | ESequence(_, list) | ETuple(_, list) ->
       List.fold_left (+) S.empty (List.map f list) 
     | EApp(_, e0, e1) | EProductSet(_, e0, _, e1)
@@ -205,7 +219,7 @@ let get_free_evars ?except e =
     | EProduct(_, list) ->
       List.fold_left (fun acc (_, e) -> acc + f e) S.empty list
     | ESumCase(_, e, list) ->
-      let fold acc (_, (v, e)) = acc + (f e - v) in
+      let fold acc (_, (p, e)) = acc + (f e -- pattern_binds p) in
       List.fold_left fold S.empty list
   in
   let set = match except with
@@ -219,10 +233,10 @@ let rec replace_evar var e e' =
   | EId(_, var') when var'=var -> e
   | ELit _ | EId _ -> e'
   | EColl(loc, kind, list) -> EColl(loc, kind, List.map r list)
-  | ELambda(_, var', _, _, _) when var'==var -> e'
-  | ELambda(loc, var', t, e0, t0) -> ELambda(loc, var', t, r e0, t0)
-  | ELet(loc, var', t, e0, e1) when var=var' -> ELet(loc, var', t, r e0, e1)
-  | ELet(loc, var', t, e0, e1) -> ELet(loc, var', t, r e0, r e1)
+  | ELambda(_, p, _, _, _) when pattern_binds p << var -> e'
+  | ELambda(loc, p, t, e0, t0) -> ELambda(loc, p, t, r e0, t0)
+  | ELet(loc, p, t, e0, e1) when pattern_binds p << var -> ELet(loc, p, t, r e0, e1)
+  | ELet(loc, p, t, e0, e1) -> ELet(loc, p, t, r e0, r e1)
   | EApp(loc, e0, e1) -> EApp(loc, r e0, r e1)
   | ETuple(loc, list) -> ETuple (loc, List.map r list)
   | ESequence(loc, list) -> ESequence (loc, List.map r list)
@@ -233,7 +247,7 @@ let rec replace_evar var e e' =
   | EStoreSet(loc, v, e0, e1) -> EStoreSet(loc, v, r e0, r e1)
   | ESum(loc, tag, e0) -> ESum(loc, tag, r e0)
   | ESumCase(loc, e0, cases) ->
-    let f (tag, (var', ec)) = if var'=var then (tag, (var, ec)) else (tag, (var, r ec)) in
+    let f (tag, (p, ec)) = if pattern_binds p << var then (tag, (p, ec)) else (tag, (p, r ec)) in
     ESumCase(loc, r e0, (List.map f cases))
   | EBinOp(loc, e0, op, e1) -> EBinOp(loc, r e0, op, r e1)
   | EUnOp(loc, op, e0) -> EUnOp(loc, op, r e0)
