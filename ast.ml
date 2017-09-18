@@ -196,18 +196,20 @@ let get_free_tvars ?except t =
     | Some exceptions -> f t -- S.of_list exceptions
   in List.sort compare @@ S.elements set
 
-let rec pattern_binds = function
+let rec pattern_binds_set = function
   | PAny -> S.empty
   | PId id -> S.singleton id
-  | PTuple list -> List.fold_left (fun acc p -> acc + pattern_binds p) S.empty list
-  | PProduct list -> List.fold_left (fun acc (_, p) -> acc + pattern_binds p) S.empty list
+  | PTuple list -> List.fold_left (fun acc p -> acc + pattern_binds_set p) S.empty list
+  | PProduct list -> List.fold_left (fun acc (_, p) -> acc + pattern_binds_set p) S.empty list
+
+let pattern_binds_list p = S.elements @@ pattern_binds_set p
 
 let get_free_evars ?except e =
   let rec f = function
     | EId(_, id) -> S.singleton id
     | ELit _ -> S.empty
-    | ELambda(_, p, _, e, _) -> f e -- pattern_binds p
-    | ELet(_, p, _, e0, e1) -> f e0 + (f e1 -- pattern_binds p)
+    | ELambda(_, p, _, e, _) -> f e -- pattern_binds_set p
+    | ELet(_, p, _, e0, e1) -> f e0 + (f e1 -- pattern_binds_set p)
     | EColl(_, _, list) | ESequence(_, list) | ETuple(_, list) ->
       List.fold_left (+) S.empty (List.map f list) 
     | EApp(_, e0, e1) | EProductSet(_, e0, _, e1)
@@ -219,7 +221,7 @@ let get_free_evars ?except e =
     | EProduct(_, list) ->
       List.fold_left (fun acc (_, e) -> acc + f e) S.empty list
     | ESumCase(_, e, list) ->
-      let fold acc (_, (p, e)) = acc + (f e -- pattern_binds p) in
+      let fold acc (_, (p, e)) = acc + (f e -- pattern_binds_set p) in
       List.fold_left fold S.empty list
   in
   let set = match except with
@@ -233,9 +235,9 @@ let rec replace_evar var e e' =
   | EId(_, var') when var'=var -> e
   | ELit _ | EId _ -> e'
   | EColl(loc, kind, list) -> EColl(loc, kind, List.map r list)
-  | ELambda(_, p, _, _, _) when pattern_binds p << var -> e'
+  | ELambda(_, p, _, _, _) when pattern_binds_set p << var -> e'
   | ELambda(loc, p, t, e0, t0) -> ELambda(loc, p, t, r e0, t0)
-  | ELet(loc, p, t, e0, e1) when pattern_binds p << var -> ELet(loc, p, t, r e0, e1)
+  | ELet(loc, p, t, e0, e1) when pattern_binds_set p << var -> ELet(loc, p, t, r e0, e1)
   | ELet(loc, p, t, e0, e1) -> ELet(loc, p, t, r e0, r e1)
   | EApp(loc, e0, e1) -> EApp(loc, r e0, r e1)
   | ETuple(loc, list) -> ETuple (loc, List.map r list)
@@ -247,7 +249,7 @@ let rec replace_evar var e e' =
   | EStoreSet(loc, v, e0, e1) -> EStoreSet(loc, v, r e0, r e1)
   | ESum(loc, tag, e0) -> ESum(loc, tag, r e0)
   | ESumCase(loc, e0, cases) ->
-    let f (tag, (p, ec)) = if pattern_binds p << var then (tag, (p, ec)) else (tag, (p, r ec)) in
+    let f (tag, (p, ec)) = if pattern_binds_set p << var then (tag, (p, ec)) else (tag, (p, r ec)) in
     ESumCase(loc, r e0, (List.map f cases))
   | EBinOp(loc, e0, op, e1) -> EBinOp(loc, r e0, op, r e1)
   | EUnOp(loc, op, e0) -> EUnOp(loc, op, r e0)

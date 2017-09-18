@@ -16,6 +16,25 @@ type typed_contract = {
 let _DEBUG_ = ref false
 let debug_indent = ref 0
 
+(* translate a pattern, and the type it matches, into an update on
+ * type constraints as well as a list of (evar, etype) pairs,
+ * pushes them into ctx, and returns the bookmark object allowing
+ * to pop them out of ctx' scope.
+ *)
+ (* TODO: scheme/type distinction is messy around here. *)
+let rec push_pattern_types ctx pattern etype : (Ctx.t*Ctx.bookmark) = match pattern with
+  | A.PId id -> Ctx.push_evars [id, etype] ctx
+  | A.PAny -> ctx, Ctx.bookmark_empty
+  | A.PTuple plist ->
+    let tlist = List.map (fun _ -> A.fresh_tvar ~prefix:"tuple" ()) plist in
+    let slist = List.map (fun v -> [], v) tlist in
+    let tuple_type = A.TTuple(A.noloc, tlist) in
+    if fst etype <> [] then unsupported "polymorphic variables";
+    let ctx, _ = Ctx.unify ctx (snd etype) tuple_type in
+    let rec f (ctx, bookmark) p t = push_pattern_types ctx p t in
+    List.fold_left2 f (ctx, Ctx.bookmark_empty) plist slist
+  | A.PProduct tagged_list -> not_impl "labelled product patterns"
+
 let rec typecheck_expr ctx expr =
   if !_DEBUG_ then begin
     (* print_endline ("\n"^String.make 80 '*'); *)
@@ -97,35 +116,34 @@ and typecheck_EColl_CSet ctx elts =
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx l pattern sid ebody sb =
+and typecheck_ELambda ctx l pattern sb ebody sb =
   (* TODO fail if id is bound by default ctx? *)
   (* Type e supposing that id has type t_arg. *)
-  let tid, tb = match sid, sb with
+  let tp, tb = match sb, sb with
     | ([], tid), ([], tb) -> tid, tb 
     | _ -> unsupported "polymorphic types" in
-  let id = match pattern with A.PId id -> id | _ -> not_impl "lambda pattern" in
-  let ctx, prev = Ctx.push_evar id sid ctx in
+  let ctx, bmrk = push_pattern_types ctx pattern sb in
   let ctx, tb'  = typecheck_expr ctx ebody in
   let ctx, tb   = Ctx.unify ctx tb tb' in
-  let ctx       = Ctx.pop_evar prev ctx in
-  let tlambda   = A.TLambda(A.noloc, tid, tb) in
-  match A.get_free_evars ~except:(id::Standard_ctx.globals) ebody with
+  let ctx       = Ctx.pop_evars bmrk ctx in
+  let tlambda   = A.TLambda(A.noloc, tp, tb) in
+  let bound_vars = A.pattern_binds_list pattern in
+  match A.get_free_evars ~except:(bound_vars @ Standard_ctx.globals) ebody with
   | [] -> ctx, tlambda
   | env ->
     let get_type id = snd @@ typecheck_expr ctx (A.eid id) in
     let tenv = List.map get_type env in 
-    ctx, A.tapp "closure" [A.ttuple tenv; tid; tb]
+    ctx, A.tapp "closure" [A.ttuple tenv; tp; tb]
 
-and typecheck_ELetIn ctx pattern s_id e0 e1 =
-  if fst s_id <> [] then unsupported "Polymorphic types";
+and typecheck_ELetIn ctx pattern sp e0 e1 =
+  if fst sp <> [] then unsupported "Polymorphic types";
   (* TODO fail if id is bound by default ctx? *)
   let ctx, t0 = typecheck_expr ctx e0 in
-  let ctx, t0 = Ctx.unify ctx (snd s_id) t0 in
+  let ctx, t0 = Ctx.unify ctx (snd sp) t0 in
   (* TODO: generalize t0? *)
-  let id = match pattern with A.PId id -> id | _ -> not_impl "let pattern" in
-  let ctx, prev = Ctx.push_evar id ([], t0) ctx in
+  let ctx, bmrk = push_pattern_types ctx pattern sp in
   let ctx, t1 = typecheck_expr ctx e1 in
-  let ctx = Ctx.pop_evar prev ctx in
+  let ctx = Ctx.pop_evars bmrk ctx in
   ctx, t1
 
 and typecheck_ESequence ctx list =
@@ -185,15 +203,11 @@ and typecheck_ESumCase ctx e e_cases =
   let ctx, t_pairs = list_fold_map
     (fun ctx (tag, (p, e)) ->
       (* TODO fail if v is bound by default ctx? *)
-      match p with 
-      | A.PId v -> 
-        let ctx, prev = Ctx.push_evar v ([], List.assoc tag case_types) ctx in
-        let ctx, t = typecheck_expr ctx e in
-        let ctx = Ctx.pop_evar prev ctx in
-        ctx, (tag, t)
-      | A.PAny -> 
-        let ctx, t = typecheck_expr ctx e in ctx, (tag, t)
-      | _ -> not_impl "sum-case pattern")
+      let s = ([], List.assoc tag case_types) in
+      let ctx, bmrk = push_pattern_types ctx p s in
+      let ctx, t = typecheck_expr ctx e in
+      let ctx = Ctx.pop_evars bmrk ctx in
+      ctx, (tag, t))
     ctx e_cases in
   let ctx, t = List.fold_left
     (fun (ctx, t) (tag, t') -> Ctx.unify ctx t t')

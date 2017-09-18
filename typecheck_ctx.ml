@@ -125,7 +125,9 @@ let add_evar name t ctx =
 let forget_evar name ctx =
   {ctx with evars=StringMap.remove name ctx.evars}
 
-type u = A.evar * A.scheme option
+type bookmark_item = A.evar * A.scheme option
+type bookmark = bookmark_item list
+let bookmark_empty = []
 
 let push_evar name t ctx =
   let prev_content = try Some(StringMap.find name ctx.evars) with Not_found -> None in
@@ -135,6 +137,16 @@ let pop_evar (name, prev_t) ctx =
   match prev_t with
   | None -> forget_evar name ctx
   | Some t -> add_evar name t ctx
+
+let push_evars list ctx =
+  let fold (ctx, bookmark) (name, scheme) =
+    let ctx, prev = push_evar name scheme ctx in
+    ctx, prev :: bookmark
+  in
+  List.fold_left fold (ctx, []) list
+
+let pop_evars bookmark ctx =
+  List.fold_right pop_evar bookmark ctx
 
 let instantiate_scheme (params, t) =
   let x = List.fold_left (fun t p -> A.replace_tvar p (A.fresh_tvar()) t) t params in

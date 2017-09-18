@@ -1,7 +1,6 @@
 module A = Ast
 
 type t
-type u
 
 val empty: t
 
@@ -22,9 +21,12 @@ val add_product: A.tvar -> A.tvar list -> (A.tag * A.etype) list -> t -> t
 val add_alias: A.tvar -> A.scheme -> t -> t
 val add_prim: A.tvar -> A.tvar list -> t -> t
 
+type bookmark_item
+type bookmark = bookmark_item list
+val bookmark_empty: bookmark
 val add_evar: A.evar -> A.scheme -> t -> t
-val push_evar: A.evar -> A.scheme -> t -> (t*u)
-val pop_evar: u -> t -> t
+val push_evars: (A.evar*A.scheme) list -> t -> (t*bookmark)
+val pop_evars: bookmark -> t -> t
 
 val unify: t -> A.etype -> A.etype -> (t * A.etype)
 val expand_type: t -> A.etype -> A.etype
