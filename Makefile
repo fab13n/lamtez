@@ -33,7 +33,7 @@ sanity:
 
 test: debug native
 	mkdir -p michelson
-	./tests/run-tests.sh
+	./test/run-tests.sh
 
 test-contracts: debug native
-	./tests/run-tests.sh contracts
+	./test/run-tests.sh contracts

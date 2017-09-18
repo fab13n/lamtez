@@ -4,6 +4,7 @@ type op = AddValue: int + RunValue: nat
 
 \p :: op:
 ( case p
-| RunValue n: Some (list-map (\(i :: int): i + n) @values)
+# should be (\i: i + n), but list-map won't take closures 
+| RunValue n: Some (list-map (\i :: int: i + 1) @values)
 | AddValue v: @values <- Cons (v, @values); None
 )
