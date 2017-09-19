@@ -75,6 +75,52 @@ let get_sum_decl_cases ctx (t:A.etype) =
     end
   | t -> unsound ("Not a sum type: "^P.string_of_type t)
 
+(* Compiles the bindings described by `pattern`.
+ * The result is a function which transforms a term, using the variables bound
+ * by `pattern`, into a variable name, and a term which depends only on that
+ * term ()
+ *)
+let rec compile_pattern ctx (p: A.pattern) (t: I.etype): string * (I.typed_expr->I.typed_expr) =
+  match p with
+  | A.PId id -> id, (fun x->x)
+  | A.PAny -> A.fresh_var ~prefix:"_" (), (fun x->x)
+  | A.PTuple plist -> compile_product_pattern ctx plist t
+  | A.PProduct tagged_patterns ->
+    let prod_name = match t with
+      | I.TProduct(Some(name, []), _) -> name 
+      | _ -> unsound "Need a named product type" in
+    let tags = match Ctx.decl_of_name ctx prod_name with
+      | A.DProduct(_, _, _, fields) -> List.map fst fields
+      | _ -> assert false in 
+    let f tag = try List.assoc tag tagged_patterns with Not_found -> A.PAny in
+    let plist = List.map f tags in
+    compile_product_pattern ctx plist t
+
+and compile_product_pattern ctx plist t =
+  let n = List.length plist in
+  let prefix = String.concat "-" (List.flatten @@ List.map A.pattern_binds_list plist) in 
+  let id = A.fresh_var ~prefix () in
+  let field_types = match t with I.TProduct(_, lazy tlist) -> tlist | _ -> unsound("pattern type") in
+  let fold (i, f) = function A.PAny -> i+1, f | p' ->
+      (* f applies the accumulated transformations of already folded fields;
+       * f' applies the transformation binding field <i|n>;
+       * f'' applies both transformations. *)
+      let t' = List.nth field_types i in
+      let id', f' = compile_pattern ctx p' t' in
+      let f'' te = 
+        let te_var = I.EId id, t in
+        let te_field = I.EProductGet(te_var, i, n), t' in
+        f (I.ELet(id', te_field, f' te), t) in
+      (* print_endline @@ sprintf "Fold <%d|%d>: p=%s\n  id: %s, f: X->%s\n  id': %s, f': X->%s\n  f'': X->%s" 
+        i n (String_of_ast.string_of_pattern p') 
+        id (String_of_intermediate.string_of_untyped_expr @@ fst @@ f @@ (I.EId "X", I.TPrim("X", [])))
+        id' (String_of_intermediate.string_of_untyped_expr @@ fst @@ f' @@ (I.EId "X", I.TPrim("X", [])))
+        (String_of_intermediate.string_of_untyped_expr @@ fst @@ f'' @@ (I.EId "X", I.TPrim("X", [])));  *)
+      i+1, f''
+  in
+  let _, f = List.fold_left fold (0, (fun x->x)) plist in
+  id, f
+
 let rec compile_expr ctx e =
   let c = compile_expr ctx in
   let e_type = Ctx.retrieve_type ctx e in
@@ -97,7 +143,7 @@ let rec compile_expr ctx e =
 
   | A.ELambda _ as e ->
     let rec get = function A.ELambda(_, p, _, b, _) ->
-      let a = match p with A.PId a -> a | _ -> not_impl"lambda patterns" in
+      let a = match p with A.PId a -> a | _ -> not_impl"patterns in lambdas" in
       let p, t = get b in a::p, t | t -> [], t in
       let param_names, body = get e in
       let param_types = match it with
@@ -107,13 +153,19 @@ let rec compile_expr ctx e =
       let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
       I.ELambda(typed_names, c body), it
 
-  | A.ELet(_, p, t, e0, e1) ->
+  | A.ELet(_, p, ps, e0, e1) ->
+    assert (fst ps = []);
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
-    let id = match p with A.PId id -> id | _ -> not_impl "let patterns" in
-    I.ELet(id, te0, te1), it1
+    begin match p with
+    | A.PId id -> I.ELet(id, te0, te1), it1
+    | A.PAny ->  I.ELet(A.fresh_var ~prefix:"_" (), te0, te1), it1
+    | A.PTuple _ | A.PProduct _ -> 
+      let id, f = compile_pattern ctx p (compile_etype ctx @@ snd ps) in
+      I.ELet(id, te0, f @@ te1), it
+    end
 
   | A.ESequence(_, list) ->
-    let fold acc x = I.ELet(Ast.fresh_var(), c x, acc), (snd acc) in
+    let fold acc x = I.ELet(Ast.fresh_var ~prefix:"_" (), c x, acc), (snd acc) in
     let rev_list = List.rev list in
     List.fold_left fold (c (List.hd rev_list)) (List.tl rev_list)
 
@@ -167,7 +219,7 @@ let rec compile_expr ctx e =
       match e_pattern with
       | A.PId e_var -> e_var, compile_etype ctx d_type, c e_expr
       | A.PAny -> A.fresh_var(), compile_etype ctx d_type, c e_expr
-      | _ -> not_impl "sum pattern" 
+      | _ -> not_impl "patterns in sum cases" 
     in
     I.ESumCase(c e_test, List.map (f e_cases) d_cases), it
 

@@ -45,7 +45,7 @@ let parse_args() =
   let emb_store  = ref false in (* do we process embedded store values? *)
 
   let set_level  l ()     = match !level with LUnspecified -> level := l | _ -> failwith "Contradicatory compilation levels" in
-  let set_string r s      = match !r     with None -> r     := Some s | _ -> failwith "Contradictory outputs" in
+  let set_string r s      = match !r     with None -> r := Some s | _ -> failwith "Contradictory outputs" in
   let set_input_string s  = input := Lexing.from_string s; input_name := s in
   let set_input_file s    = input := Lexing.from_channel (open_in s); input_name := s in
   let set_in_store_str  s = in_store := Some ("litteral "^s, Lexing.from_string s) in
@@ -157,8 +157,7 @@ let parse_file a =
     log ("Typechecked succesfully. code :: "^
          SoA.string_of_type typed_contract.Typecheck.param_type^" -> "^
          SoA.string_of_type typed_contract.Typecheck.result_type^"; storage :: "^
-         SoA.string_of_type typed_contract.Typecheck.storage_type
-         );
+         SoA.string_of_type_decl (Typecheck_ctx.decl_of_name typed_contract.Typecheck.ctx "@"));
 
       (* Compile the typechecked contract into intermediate tree. *)
       if a.does_interm then

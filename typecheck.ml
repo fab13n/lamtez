@@ -16,24 +16,40 @@ type typed_contract = {
 let _DEBUG_ = ref false
 let debug_indent = ref 0
 
-(* translate a pattern, and the type it matches, into an update on
- * type constraints as well as a list of (evar, etype) pairs,
- * pushes them into ctx, and returns the bookmark object allowing
- * to pop them out of ctx' scope.
+(* Translates a pattern, and the type it matches, into type constraints
+ * added to `ctx`;
+ * Pushes the pattern variables into ctx' expression variables;
+ * Keeps a bookmark to allow the removal of those evars.
  *)
  (* TODO: scheme/type distinction is messy around here. *)
-let rec push_pattern_types ctx pattern etype : (Ctx.t*Ctx.bookmark) = match pattern with
-  | A.PId id -> Ctx.push_evars [id, etype] ctx
+let rec push_pattern_types ctx pattern scheme : (Ctx.t*Ctx.bookmark) = match pattern with
+  | A.PId id ->
+    assert(fst scheme = []);
+    Ctx.push_evars [id, scheme] ctx
   | A.PAny -> ctx, Ctx.bookmark_empty
   | A.PTuple plist ->
     let tlist = List.map (fun _ -> A.fresh_tvar ~prefix:"tuple" ()) plist in
-    let slist = List.map (fun v -> [], v) tlist in
     let tuple_type = A.TTuple(A.noloc, tlist) in
-    if fst etype <> [] then unsupported "polymorphic variables";
-    let ctx, _ = Ctx.unify ctx (snd etype) tuple_type in
-    let rec f (ctx, bookmark) p t = push_pattern_types ctx p t in
-    List.fold_left2 f (ctx, Ctx.bookmark_empty) plist slist
-  | A.PProduct tagged_list -> not_impl "labelled product patterns"
+    if fst scheme <> [] then unsupported "polymorphic variables";
+    let ctx, _ = Ctx.unify ctx (snd scheme) tuple_type in
+    let f (ctx, bmrk) p t = 
+      let ctx, bmrk' = push_pattern_types ctx p ([], t) in
+      ctx, bmrk @ bmrk' in
+    List.fold_left2 f (ctx, Ctx.bookmark_empty) plist tlist
+  | A.PProduct tagged_pattern_list ->
+    (* Assume that etype has the corresponding product's type,
+     * and that every field has the corresponding field type *)
+    let pname = Ctx.name_of_product_tag ctx (fst @@ List.hd tagged_pattern_list) in
+    let tprod = A.TApp(A.noloc, pname, []) in (* TODO check that the product type isn't polymorphic *)
+    let [], tagged_type_list = Ctx.product_of_name ctx pname in
+    let ctx, _ = Ctx.unify ctx (snd scheme) tprod in
+    let rec f ctx bmrk = function
+      | [] -> ctx, bmrk
+      | (tag, p) :: other_tagged_patterns ->
+        let s = [], List.assoc tag tagged_type_list in
+        let ctx, bmrk = push_pattern_types ctx p s in
+        f ctx bmrk other_tagged_patterns in
+    f ctx Ctx.bookmark_empty tagged_pattern_list
 
 let rec typecheck_expr ctx expr =
   if !_DEBUG_ then begin
@@ -59,7 +75,7 @@ let rec typecheck_expr ctx expr =
   | A.EId(_, id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
     ctx, Ctx.instantiate_scheme (scheme)
-  | A.ELambda(_, id, sid, e, se) -> typecheck_ELambda ctx expr id sid e se
+  | A.ELambda(_, pattern, sp, e, se) -> typecheck_ELambda ctx expr pattern sp e se
   | A.ELet(_, id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
   | A.EApp(_, f, arg) -> typecheck_EApp ctx f arg
   | A.ETypeAnnot(_, e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
@@ -116,13 +132,13 @@ and typecheck_EColl_CSet ctx elts =
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx l pattern sb ebody sb =
+and typecheck_ELambda ctx l pattern sp ebody sb =
   (* TODO fail if id is bound by default ctx? *)
   (* Type e supposing that id has type t_arg. *)
-  let tp, tb = match sb, sb with
+  let tp, tb = match sp, sb with
     | ([], tid), ([], tb) -> tid, tb 
     | _ -> unsupported "polymorphic types" in
-  let ctx, bmrk = push_pattern_types ctx pattern sb in
+  let ctx, bmrk = push_pattern_types ctx pattern sp in
   let ctx, tb'  = typecheck_expr ctx ebody in
   let ctx, tb   = Ctx.unify ctx tb tb' in
   let ctx       = Ctx.pop_evars bmrk ctx in

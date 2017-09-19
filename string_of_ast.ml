@@ -28,8 +28,8 @@ let string_of_type_decl d =
   in
   let right =
     match d with
-    | DSum(_, _, _, pairs) -> sep_list " + " string_of_decl_pair pairs^")"
-    | DProduct(_, _, _, pairs) -> sep_list " * " string_of_decl_pair pairs^")"
+    | DSum(_, _, _, pairs) -> "("^sep_list " + " string_of_decl_pair pairs^")"
+    | DProduct(_, _, _, pairs) -> "("^sep_list " * " string_of_decl_pair pairs^")"
     | DAlias(_, _, _, t) -> string_of_type t
     | DPrim(_, _, _) -> "primitive"
   in
@@ -81,8 +81,7 @@ let rec string_of_expr =
     let rec f = function
       | ELambda(_, p, tp, e, te) ->
         let p = if is_fresh_tvar (snd tp) then (string_of_pattern p) 
-          else "("^string_of_pattern p^" :: "^sos tp^")" in
-        (* let t = if is_fresh_tvar te then " :: "^sos te else "" in *)
+          else string_of_pattern p^" :: "^sos tp in
         p^" "^f e
       | e -> type_annot^": "^soe e in
     "(λ"^f e^")"

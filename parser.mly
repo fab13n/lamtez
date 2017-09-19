@@ -78,8 +78,8 @@ composite_decl_rhs:
 composite_decl_pair: tag=TAG COLON? t=etype {(tag, t)}
 
 store_decl:
-| STORE name=tag_or_id TYPE_ANNOT t=etype EQ v=data SEMICOLON? {(name, t, Some v)}
-| STORE name=tag_or_id TYPE_ANNOT t=etype SEMICOLON? {(name, t, None)}
+| STORE name=store_tag TYPE_ANNOT t=etype EQ v=data SEMICOLON? {(name, t, Some v)}
+| STORE name=store_tag TYPE_ANNOT t=etype SEMICOLON? {(name, t, None)}
 
 atomic_constant:
 | n=INT {LInt(loc $startpos $endpos, n)}
@@ -100,7 +100,7 @@ data:
 
 data_product_pair: tag=TAG COLON? data=data {tag, data}
 
-data_store_item: STORE? i=tag_or_id EQ d=data {i, d}
+data_store_item: STORE? i=store_tag EQ d=data {i, d}
 
 data_store: x=data_store_item* EOF {x}
 data_parameter: d=data EOF {d}
@@ -128,8 +128,8 @@ expr0:
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
 | e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(loc $startpos $endpos, e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(loc $startpos $endpos, e, n)}
-| STORE s=tag_or_id  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
-| STORE s=tag_or_id LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
+| STORE s=store_tag  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
+| STORE s=store_tag LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
 
 lambda_annot: TYPE_ANNOT t=etype {[], t} | {[], fresh_tvar()}
 
@@ -171,7 +171,7 @@ expr_sequence: l=separated_nonempty_list(SEMICOLON, expr) {
   | _ -> let loc =loc $startpos $endpos in esequence ~loc l
 }
 
-tag_or_id: t=TAG {t} | v=ID {String.capitalize_ascii v}
+store_tag: t=TAG {"@"^t} | v=ID {"@"^String.capitalize_ascii v}
 
 sum_case: 
 | tag=TAG COLON expr=expr_sequence {(tag, (PAny, expr))}
