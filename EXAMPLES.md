@@ -10,13 +10,13 @@ This one is as striaghtforward in Lamtez as in Michelson: just take a
 unit and return it.
 
     # id.ltz
-    \(p :: unit): p
+    \p :: unit: p
 
 ## Take my money
 
 Here again nothing fancy:
 
-    \(k :: key):
+    \k :: key:
       let contract = contract-get k;
       contract-call contract () tz1.00
 
@@ -26,7 +26,7 @@ Here we'll use a sum case matching to encode an if/then/else. We also
 introduce a stored variable `minimum`:
 
     @minimum :: tez = tz1.00 # with a default value
-    \(p :: unit): (if self-amount < @minimum: fail)
+    \p :: unit: (if self-amount < @minimum: fail; else: ())
 
 ## Queue
 
@@ -41,7 +41,7 @@ with a `?...|...|...` accessor.
     @j   :: nat = 0
     @map :: map nat data = map-empty
 
-    \(parameter :: option data):
+    \parameter :: option data:
     ( case parameter
     | Some data: @map <- map-update @j (Some data) @map;
                  @j <- @j + 1;
@@ -69,7 +69,7 @@ it would have been nice to write `Some (sig, data): ...`.
     @data :: data
     @fee  :: tez
 
-    \(parameter :: operation):
+    \parameter :: operation:
     ( case parameter
     | None: ( case self-amount >= @fee
             | False: fail
@@ -91,7 +91,7 @@ thanks to the store update operations separated from result computation.
 
     @accounts :: map key tez
 
-    \(operation::operation):
+    \ operation :: operation:
     ( case operation
     | Deposit key:
         let new_balance = ( case map-get key @accounts
@@ -119,7 +119,7 @@ checking).
     @enthronement_date :: time
     @enthronement_cost :: tez
 
-    \(parameter :: key):
+    \parameter :: key:
     let one_week = 60 * 60 * 24 * 7;
     (if self-now < @enthronement_date + one_week and self-amount < @enthronement_cost: fail);
     @royal_key         <- parameter;
@@ -129,7 +129,7 @@ checking).
 ## Some simpler examples
 
     # add1
-    \(p :: int): p + 1
+    \p :: int: p + 1
 
     # concat_string
     @stored_string :: string
@@ -141,18 +141,18 @@ checking).
     @amount       :: tez
     @destination  :: contract unit unit
 
-    \(parameter :: unit):
+    \parameter :: unit:
 
-    ( if self-now < @release_date: fail);
+    (if self-now < @release_date: fail | else: ());
     contract-call @destination () @amount)
 
 ## Lambda, map, and creating contracts
 
 First, mapping a function on a list:
 
-    \(param :: list int):
+    \param :: list int:
 
-    let f = \x: x+1;
+    let f = \x: x + 1;
     list-map f param
 
 With the following example, something noteworthy is happening. When writing 
@@ -188,7 +188,7 @@ With named variables and labelled types, here's my version:
     @index    :: nat
     @map      :: map nat line
 
-    \(p :: t_param):
+    \p :: t_param:
     ( case p
     | Register line: @map <- map-update @index (Some line) @map;
                      @index <- @index + 1;
@@ -223,7 +223,7 @@ Here's a sketch of what this different version would look like:
     @approver :: contract nat bool
     @map      :: map string (account * tez)
 
-    \(p :: t_param):
+    \p :: t_param:
     ( p ?
     | Register line: let id = line.0;
                      (if map-mem id @map: fail);
@@ -253,7 +253,7 @@ account; otherwise it goes to another (presumably for refunds).
     @when_threshold_reached :: account
     @when_too_late          :: account
 
-    \(p :: unit):
+    \p :: unit:
 
     ( if self-now > @time_threshold:
         contract-call @when_too_late () self-balance
@@ -283,9 +283,9 @@ so that the contract isn't destroyed and the status can be checked.
     @broker                 :: account
     @broker_fee             :: tez
 
-    \(p :: unit):
+    \p :: unit:
 
-    if
+    ( if
     ### If the contract is realized, don't call it again ###
     | @status != "open": fail
 
@@ -306,6 +306,7 @@ so that the contract isn't destroyed and the status can be checked.
     ### Before timeout, not enough money yet, wait ###
     | else:
         ()
+    )
 
 ### Forward contract
 
@@ -351,11 +352,11 @@ non-standardized financial contract. Here's its Lamtez transcription:
     @paid_by_S :: tez
     @delivered :: nat
 
-    \(parameter :: parameter):
+    \parameter :: parameter:
 
     let one_day = 24 * 60 * 60;
 
-    if
+    ( if
     ### Between Z and Z+24h, accept collaterals from B and S ###
     | self-now  <  @Z + one_day:
         ( case parameter
@@ -401,3 +402,4 @@ non-standardized financial contract. Here's its Lamtez transcription:
     ### S failed to deliver after T+48h => all the money goes to B ###
     | True:
         contract-call @B () self-balance  # Timeout, money goes to B
+    )

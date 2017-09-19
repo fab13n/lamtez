@@ -13,6 +13,9 @@ let app loc f args =
   | EId(_, "map")  -> collection CMap  args
   | EId(_, "set")  -> collection CSet  args
   | f              -> eapp (f::args)
+(* TODO catch formulae like "f+1", which are applications but might have
+ * been intented to be nat additions. The offset difference between
+ * end of f and beginning of args shall be used. *)
 
 let data_collection ?(loc=noloc) constr_name args =
   if not (List.mem constr_name ["list";"set";"map"]) then

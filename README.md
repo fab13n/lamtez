@@ -150,7 +150,9 @@ keyboards, we adopt Haskell's convention of using the backslash character "\"
 instead. 
 
 The complete syntax for a function is `\x: body`. Parameters can be annotated 
-with types, through the `::` infix operator: `\(x :: nat): body`. 
+with types, through the `::` infix operator: `\x :: nat: body`. The result
+type can also be specified, although it can normally be inferred by the
+compiler: `\x :: nat :: unit: body`.
 
 Lamtez supports multi argument functions, through currying (nested functions 
 returning functions, a standard idiom in λ-calcullus inspired languages) (NOT 
@@ -177,18 +179,18 @@ Examples:
 
     \x: x
     \x y: x + y
-    \(x: nat) (y:nat): x - y
-    \(x: nat) y: x * y
+    \x :: nat, y ::nat: x - y
+    \x:: nat, y: x * y
     \parameter: ((), map-update parameter (Some self-amount) @store)
 
 For instance, the simplest contract, identity, which does nothing, just takes 
 a unit parameter and returns a unit result, is written below: 
 
-    \(p :: unit): p
+    \p :: unit: p
 
 The barely more interesting one, which adds one to its parameter, is:
 
-    \(p :: nat): p+1
+    \p :: nat: p + 1
 
 ### Literals
 
@@ -196,7 +198,8 @@ Lamtez supports the same literals as Michelson:
 
 * to distinguish naturals from positive integers, the later have to be 
   prefixed with a `+` sign, so `42` is a natural number and `+42` is typed as 
-  an integer. 
+  an integer. Beware therefore that `f+1` is the application of function `f`
+  to signed integer `+1`, and not an addition to number `f`.
 
 * dates are represented with the ISO format, without surrounding quotes:
   `2017-08-22T22:00:00Z`, `2017-08-22T22:00:00+01:00`
@@ -244,15 +247,18 @@ with a new variable of the same name:
 ### Tuples (unlabelled cartesian products)
 
 Whereas Michelson supports pairs, Lamtez supports tuples of length bigger than 
-2 (and encodes them as nested pairs). Such tuples are surrounded with 
-parentheses, and elements are separated with commas. 
+2 (and encodes them as nested pairs). Contrary to many ML dialects, tuples are 
+mandatorily surrounded with parentheses to avoid misleading precedence issues; 
+elements are separated with commas. 
 
 Elements are extracted from a tuple with the suffix `.n`, where `n` is a 
 litteral positive integer, 0-indexed. The extractor suffix binds tighter than 
 function application (same as most ML-family languages). 
 
 Tuples are encoded as balanced trees, i.e. so that the length of paths in 
-`n`-products grows as `log2(n)`. This can easily be changed if desired. 
+`n`-products grows as `log2(n)`. This can easily be changed if desired 
+(left-folded or right-folded accessors have `o(n)` access and update times,
+but might lead to simpler proofs). 
 
 Example:
 
@@ -268,7 +274,7 @@ a capital letter.
 
 Type declarations happen at the beginning of the contract (cf. infra);
 labelled product types are sequences of labels and types separated by `*`
-symbols.
+    symbols.
 
 Litteral product types are sequences of labels and types, separated by commas
 and surrounded by braces.
@@ -411,10 +417,10 @@ updated value and perform the update from outside:
 
     @n :: int
 
-    let f = \(x :: int): @n <- x + 1; # Illegal
+    let f = \x :: int: @n <- x + 1; () # Illegal
     f 3
 
-    let f = \(x :: int): x + 1;
+    let f = \x :: int: x + 1;
     @n <- f 3 # Legal
 
 Instead of performing storage updates in function arguments or products,

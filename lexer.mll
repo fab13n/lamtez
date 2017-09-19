@@ -36,6 +36,7 @@ let b58 = ['1'-'9' 'A'-'H' 'J'-'N' 'P'-'Z' 'a'-'k' 'm'-'z']
 let hex = ['0'-'9' 'a'-'f']
 let sig = "sig:" hex+
 let key = "tz1" b58+
+
 rule read = parse
 | white {read lexbuf}
 | '#' [^'\r' '\n']* ['\r' '\n'] {read lexbuf}
