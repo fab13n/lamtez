@@ -1,0 +1,388 @@
+\documentclass[10pt,landscape,a4paper]{article}
+\usepackage[utf8]{inputenc}
+%\usepackage[nosf]{kpfonts}
+%\usepackage[t1]{sourcesanspro}
+\usepackage{multicol}
+%\usepackage{wrapfig}
+\usepackage[top=5mm,bottom=5mm,left=5mm,right=5mm]{geometry}
+%\usepackage{microtype}
+\usepackage{fancyvrb}
+
+\usepackage{listings}% http://ctan.org/pkg/listings
+\lstset{basicstyle=\ttfamily, mathescape}
+
+\let\bar\overline
+\renewcommand{\baselinestretch}{.8}
+\pagestyle{empty}
+\makeatletter
+
+\setlength{\parindent}{0pt}
+
+\renewcommand{\section}{\@startsection{section}{1}{0mm}%
+                                {.2ex}%
+                                {.2ex}%x
+                                {\sffamily\small\bfseries}}
+\renewcommand{\subsection}{\@startsection{subsection}{1}{0mm}%
+                                {.2ex}%
+                                {.2ex}%x
+                                {\sffamily\bfseries}}
+\renewcommand{\subsubsection}{\@startsection{subsubsection}{1}{0mm}%
+                                {.2ex}%
+                                {.2ex}%x
+                                {\sffamily\footnotesize\bfseries}}
+
+\begin{document}
+\small
+\begin{multicols*}{3}
+
+{\sffamily\Large\bfseries Lamtez Cheat-sheet}
+
+\section{Contract}
+\begin{Verbatim}[frame=single]
+<contract> ::=
+  <type_declaration*>
+  <storage_declaration*>
+  <expression>
+\end{Verbatim}
+The expression must denote a function, taking a parameter and
+returning a result.
+
+
+\section{Type declarations}
+
+\subsection{Labelled sum types}
+\begin{Verbatim}[frame=single]
+type <name>=<Label_0>:<type_0>+...+<Label_n>:<type_n>
+\end{Verbatim}
+
+Union of named type cases, in arbitrary number, compiling into nested
+\verb|Left/Right| cases. Two products or sum types cannot share a
+common label. The value associated with a label can be omitted when it is
+of type \verb|unit|.
+
+The following sym types are built-in:
+\begin{Verbatim}
+type option t =  None | Some t
+type bool     = False | True
+type list a   =   Nil | Cons (a * list a)
+\end{Verbatim}
+
+\subsection{Labelled product types}
+\begin{Verbatim}[frame=single]
+type <name>=<Label_0>:<type_0>*...*<Label_n>:<type_n>
+\end{Verbatim}
+
+Record structures with named fields, in arbitrary number, compiling into
+nested pairs. Two product or sum types cannot share a common label.
+
+\subsection{Type aliases}
+\begin{Verbatim}[frame=single]
+type <name> <params>* = <type(params)>
+\end{Verbatim}
+
+\verb|type account = contract unit unit| is built-in.
+
+\subsection{Unlabelled tuple types}
+\begin{Verbatim}[frame=single]
+(type_0 * ... * type_n)
+\end{Verbatim}
+
+Unlabelled tuples can be used as annotations without type
+declarations, as a parameter for sum cases and product fields, or
+named with a type alias.
+
+\verb|type pair a b = (a*b)| is built-in.
+
+
+
+\section{Storage declaration}
+\begin{Verbatim}[frame=single]
+@<name> :: <type> (= <expr>)?
+\end{Verbatim}
+Storage fields are persisted as the contract's storage. If every
+storage field has an initialization value, the compiler can optionally
+produce an initial store value litteral (option
+\verb|--store-output|). Names can be capitalized or not.
+
+
+
+\section{Expressions}
+
+\subsection{Litterals}
+
+{\bf Natural numbers:} \verb|[0-9]+|\\
+e.g. \verb|1|, \verb|123456|
+
+{\bf Signed integers:} \verb%(+|-)[0-9]+%\\
+e.g. \verb|+1|, \verb|-2|, \verb|+0|.\\
+Plus sign is mandatory for ints $\geq0$.\\
+Beware that \verb|f+1| (without space) is parsed as \verb|f(+1)|, not \verb|f + 1|.
+
+{\bf Tez:} \verb%tz<d>*.<dd> | tz<d>+%\\
+where \verb|<d>| is a decimal digit, \verb|<dd>| a pair thereof.\\
+e.g. \verb|tz1|, \verb|tz2.00|, \verb|tz.02|.
+
+{\bf Key hashes:} \verb%tz1<b58_char>+%\\
+e.g. \verb|tz1MGxkasF5ABVVrxzxGbWo8wPg7EaLKn4RS|
+
+{\bf Signatures:} \verb|sig:[0-9a-f]+|\\
+e.g. \verb|sig:91b334be19d66d30205563b426c2f9b3|...
+
+{\bf Date:} \verb%dddd-dd-ddTdd:dd:ddZ |%\\
+\verb%     dddd-dd-ddTdd:dd:dd(+|-)dd(:dd?))%\\
+where \verb|d| is a decimal digit.\\
+e.g. \verb|1970-01-01T00:00:00Z|,\\
+\verb|    2014-09-02T12:34:56+02:00|
+
+{\bf String:} \verb|"[^"]*"|:\\
+e.g. \verb|"foo"|, \verb|"hello \"world\""|.\\
+Must fit on a single line, double quotes escaped with backslashes;
+same escaped characters as Michelson.
+
+\subsection{Composite types and collections}
+\begin{Verbatim}[frame=single]
+{ <Label_0>: <expr_0>, ...,
+  <Label_n>: <expr_n>}   # labelled product
+(<expr_0>, ..., <expr_n) # tuple
+(list <expr_0> ... <expr_n>)
+(set <expr_0> ... <expr_n>)
+(map <expr_k0> <expr_v0> ...
+     <expr_kn> <expr_vn>)
+\end{Verbatim}
+
+\subsection{Identifiers}
+Identifiers start with a lowercase letter, can contain alphanumeric
+characters, underscores and dashes.
+
+\subsection{Functions}
+\begin{Verbatim}[frame=single]
+fun (<pattern>(::<type_param>)?)+ (::<type_result>)?:
+    <expr>
+\end{Verbatim}
+
+As in ML, arguments are separated by spaces without mandatory
+parentheses around them.  Function application binds tighter than
+binary and unary operators (e.g. \verb|a b + c d| parses as
+\verb|a(b) + c(d)|), but looser than product field accessors.
+
+\begin{Verbatim}
+f arg_0 arg_1 ... arg_n
+f (g arg_g0 arg_g1) arg_f1
+\end{Verbatim}
+
+Functions are created with ``\verb|fun|'' standing for the $\lambda$
+operator (backslash also accepted for Haskellers); parameters are
+comma-separated between them, separated from the function body by a
+colon; when parameter types can't be inferred, they must be annotated
+with a double-colon \verb|::| sign. Optionally, the function result
+can be annotated with a double colon after annotated parameters.
+
+\begin{Verbatim}
+fun p: p - 1
+fun p0, p1: p0 * p1
+fun p0 :: tez, p1 :: nat :: tez: p0 * p1
+fun p :: unit: ()
+fun p :: unit :: time: self-now
+\end{Verbatim}
+
+\subsection{Local variables}
+\begin{Verbatim}[frame=single]
+let <pattern> = <expr_0>; <expr_1>; ...; <expr_n>
+\end{Verbatim}
+Local variables are created with the \verb|let| keyword, either as
+identifiers, or as binding patterns (nested product types).
+
+\subsection{Binding patterns}
+\begin{Verbatim}[frame=single]
+  <id>
+| _
+| (<pattern_0>,...,<pattern_n>)
+| {<label_0>:<pattern_0>,...,<label_n>:<pattern_n>}
+\end{Verbatim}
+When binding an identifier and a value (in function parameters, let
+declarations and sum cases), patterns for product types and tuples can
+be used, thus binding several variables simultaneously. Patterns can
+be nested. They may not use sum types, as it would introduce the
+possibility of runtime failures.
+
+\begin{verbatim}
+let (a, b) = (1, 2);
+case p | Some {Lon: x, Lat: y}: ... end;
+let norm = fun (x, y) :: int*int: x*x + y*y
+\end{verbatim}
+
+\subsection{Flow control}
+
+\subsubsection{Sum case deconstruction}
+\begin{Verbatim}[frame=single]
+case <expr>
+| <Label_0> <pattern_0>: <expr_0>
+| ...
+| <Label_n> <pattern_n>: <expr_n>
+end
+\end{Verbatim}
+
+Labels can appear in any order, but all cases of one sum type must be
+present. Patterns \verb|p_n| which are not used in \verb|e_n| can be
+omitted. Booleans, options and lists are sum cases and can be
+deconstructed with a sum type.
+
+\subsubsection{If then else / switch}
+\begin{Verbatim}[frame=single]
+if
+| <expr_cond_0>: <expr__if_true_0>
+| ...
+| <expr_cond_n>: <expr__if_true_n>
+| else: <expr_if_everything_false>
+end
+\end{Verbatim}
+
+The code \verb|<expr_if_true_i>| corresponding to the first true
+\verb|<expr_cond_i>| is evaluated. \verb|else| clause may be
+ommitted if the result type is \verb|unit|.
+
+\subsection{Field access}
+\begin{Verbatim}[frame=single]
+<expr>.<d>
+<expr>.<label>
+@<name>
+@<name> <- <expr>;
+<label> <expr>
+\end{Verbatim}
+Tuple fields are accessed with a dot followed by the field number, 0-indexed.
+
+Labelled product fiels are accessed with a dot followed by the field label.
+
+Persistent storage fields are accessed with ``\verb|@|'' followed by
+the field name.  They can be updated with \verb|@<name> <- <expr>;|,
+but such operations cannot occur in a function, a litteral product or
+a function argument.
+
+Sum types are constructed with the case label followed by the
+associated value; the value can be omitted when its type is
+\verb|unit|.
+
+\begin{Verbatim}
+let t = ("a","b","c"); t.1;    # Tuple access
+let p = {X:45,Y: 1}; p.X;      # Product access
+let s :: option nat = Some 42; # Sum constr.
+let x = not @field;            # store access
+@field <- x                    # store update
+\end{Verbatim}
+
+\vfill\null\columnbreak
+
+\subsection{Operations}
+\subsubsection{Binary infix operators}
+in decreasing order of precedence:
+\begin{itemize}
+\itemsep0em
+\item \verb|a * b| and \verb|a / b| (euclidian division);
+\item \verb|a + b| and \verb|a - b|;
+\item bit shifting \verb|a << b| and \verb|a >> b|;
+\item comparisons \verb|a < b|, \verb|a <= b|, \verb|a = b|, \verb|a != b|,
+  \verb|a > b|, \verb|a >= b|;
+\item logical and bitwise conjunction \verb|a && b|;
+\item logical  disjunctions \verb%a || b% and \verb|a ^^ b|.
+\end{itemize}
+
+Beware of spaces around addition and substraction: ``\verb|-|'' is a
+valid identifier character, and both characters can be interpreted as
+prefix sign for a signed literal integer.
+
+
+\subsubsection{Unary operators}
+\verb|-e|, \verb|not e|.\\
+Precedence higher than binary ops, lower than field accessors and
+function applications.
+
+\subsubsection{Operands and result types}
+
+Operator types and semantics are lifted from Michelson:
+\begin{itemize}
+\itemsep0em
+\item \verb|nat| and \verb|int| can be added/substracted/multiplied
+  together, and result in a signed \verb|int|, except for \verb|nat+nat| and
+  \verb|nat*nat| which result in \verb|nat|.
+\item As in Michelson, divisions are euclidian, return an (integer
+  division $*$ natural reminder) option pair (\verb|None| in case of
+  division by 0).
+\item \verb|nat| can be added/substracted with \verb|time|, \verb|tez|
+  can be added/substracted together.
+\item \verb|tez| can be multiplied by \verb|nat|, divided together or
+  by a \verb|nat|.
+\item Logical operators work on \verb|bool| as well as bitwise on \verb|nat|.
+\item comparison operators work on every type (both operands must have
+  the same type, though).
+\end{itemize}
+
+\vfill\null\columnbreak
+
+\section{Primitives}
+
+\subsection{Current contract context}
+\begin{Verbatim}
+val fail          :: fail # FAIL
+val self-amount   :: tez  # AMOUNT
+val self-balance  :: tez  # BALANCE
+val self-now      :: time # NOW
+val self-contract :: $\forall$p,r: contract p r # SELF
+val self-source   :: $\forall$p,r: contract p r # SOURCE
+val self-steps-to-quota :: nat # STEPS_TO_QUOTA
+\end{Verbatim}
+
+\subsection{Contract management}
+\begin{lstlisting}
+val contract-call :: $\forall$p,r:
+  contract p r $\rightarrow$ p $\rightarrow$ tez $\rightarrow$
+  r # TRANSFER_TOKENS
+val contract-create :: $\forall$p,s,r:
+  key $\rightarrow$ option key $\rightarrow$ bool $\rightarrow$ bool $\rightarrow$
+  tez $\rightarrow$ (p*s$\rightarrow$r*s) $\rightarrow$ storage $\rightarrow$
+  contract p r # CREATE_CONTRACT
+val contract-create-account ::
+  key $\rightarrow$ option key $\rightarrow$ bool $\rightarrow$ tez $\rightarrow$
+  account # CREATE_ACCOUNT
+val contract-get ::
+  key $\rightarrow$ account # DEFAULT_ACCOUNT
+val contract-manager :: $\forall$p, s:
+  contract p s $\rightarrow$ key  # MANAGER
+\end{lstlisting}
+
+\verb|contract-call| cannot be used in a function / tuple / product / collection.\\
+
+\subsection{Cryptography}
+\begin{lstlisting}
+val crypto-check :: key $\rightarrow$ sig $\rightarrow$ string $\rightarrow$ bool
+val crypto-hash  :: $\forall$a: a $\rightarrow$ string
+\end{lstlisting}
+
+
+\subsection{Collections}
+
+\begin{lstlisting}
+val list-map   :: $\forall$a,b: (a$\rightarrow$b) $\rightarrow$ list a $\rightarrow$ list b
+val list-reduce:: $\forall$a,acc:
+    (a$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ list a $\rightarrow$ acc $\rightarrow$ acc
+val list-size  :: $\forall$a: list a $\rightarrow$ nat
+val set-empty  :: $\forall$elt: set elt
+val set-map    :: $\forall$a,b: (a$\rightarrow$b) $\rightarrow$ set a $\rightarrow$ set b
+val set-mem    :: $\forall$elt: set elt $\rightarrow$ elt $\rightarrow$ bool
+val set-reduce :: $\forall$elt acc:
+    (elt$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ set elt $\rightarrow$ acc $\rightarrow$ acc
+val set-update :: $\forall$elt: elt $\rightarrow$ bool $\rightarrow$ set elt
+val set-size   :: $\forall$elt: set elt $\rightarrow$ nat
+val map-empty  :: $\forall$k,v: map k v
+val map-get    :: $\forall$k,v: k $\rightarrow$ map k v $\rightarrow$ option v
+val map-map    :: $\forall$k,v0,v1:
+    (k$\rightarrow$v0$\rightarrow$v1) $\rightarrow$ map k v0 $\rightarrow$ map k v1
+val map-mem    :: $\forall$k,v: k $\rightarrow$ map k v $\rightarrow$ bool
+val map-reduce :: $\forall$k,v,acc:
+    (k$\rightarrow$v$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ map k v $\rightarrow$ acc $\rightarrow$ acc
+val map-update :: $\forall$k,v:
+    k $\rightarrow$ option v $\rightarrow$ map k v $\rightarrow$ map k v
+val map-size   :: $\forall$k,v: map k v $\rightarrow$ nat
+\end{lstlisting}
+
+\end{multicols*}
+\end{document}

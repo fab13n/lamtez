@@ -1,1 +1,1 @@
-\parameter :: nat: parameter + 1
+fun parameter :: nat: parameter + 1

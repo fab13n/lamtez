@@ -48,7 +48,7 @@ type expr =
   | ELit    of loc * literal
   | EColl   of loc * collection_kind * expr list
   | EId     of loc * evar
-  | ELambda of loc * pattern * scheme * expr * scheme
+  | ELambda of loc * pattern * etype * expr * etype
   | ELet    of loc * pattern * scheme * expr * expr
   | ESequence of loc * expr list
   | EApp    of loc * expr * expr
@@ -129,7 +129,7 @@ let ttuple ?(loc=noloc) list = match list with
 | [t] -> t
 | list -> TTuple(loc, list)
 
-let eid ?(loc=noloc) id = EId(loc, id)
+  let eid ?(loc=noloc) id = EId(loc, id)
 let eunit_loc ~loc = ETuple(loc, [])
 let eunit = eunit_loc noloc
 let etuple ?(loc=noloc) list = match list with

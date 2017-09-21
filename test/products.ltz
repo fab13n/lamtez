@@ -6,7 +6,7 @@ type prod5 = Int_0_5 int * String_1_5 string * Tez_2_5 tez * Nat_3_5 nat * Bool_
 
 @x :: prod5
 
-\param :: unit:
+fun param :: unit:
 
   let x1 = { Int_0_1: @x.Int_0_5 - 1
            };

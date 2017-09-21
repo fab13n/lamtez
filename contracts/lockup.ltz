@@ -2,7 +2,7 @@
 @amount       :: tez
 @destination  :: account
 
-\parameter :: unit:
+fun parameter :: unit:
 
-(if self-now < @release_date: fail);
+if self-now < @release_date: fail end;
 contract-call @destination () @amount

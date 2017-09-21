@@ -31,25 +31,27 @@ type bid = Key: key * Refund: contract unit unit
 @increment        :: tez         # New bid must raise previous ones by at least taht much.
 @bidding_fee      :: tez         # Each new bid pays this fee, whether they end up winning or not.
 
-\bid :: bid:
+fun bid :: bid:
 
 # Check dates: is the auction still running?
-(if self-now > @current_end_date: fail);
-( case @hard_end_date
-| Some date: (if self-now > date: fail)
-| None: () );
+if self-now > @current_end_date: fail end;
+case @hard_end_date
+| Some date: if self-now > date: fail end
+| None: ()
+end;
 
 # Check whether the bid was sufficiently founded
-(if self-amount < @current_price + @increment: fail);
+if self-amount < @current_price + @increment: fail end;
 
 # Recompute @current_end_date
 let new_date = self-now + @raising_delay;
-@current_end_date <- (if new_date > @current_end_date: new_date | True: @current_end_date);
+@current_end_date <- if new_date > @current_end_date: new_date | True: @current_end_date end;
 
 # Reimburse previous holder
-( case @current_bid
+case @current_bid
 | Some old_bid: contract-call old_bid.Refund () @current_price
-| None: () );
+| None: ()
+end;
 
 # Update winning bidder info
 @current_bid   <- Some bid;

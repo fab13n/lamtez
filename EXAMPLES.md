@@ -10,13 +10,13 @@ This one is as striaghtforward in Lamtez as in Michelson: just take a
 unit and return it.
 
     # id.ltz
-    \p :: unit: p
+    fun p :: unit: p
 
 ## Take my money
 
 Here again nothing fancy:
 
-    \k :: key:
+    fun k :: key:
       let contract = contract-get k;
       contract-call contract () tz1.00
 
@@ -26,7 +26,7 @@ Here we'll use a sum case matching to encode an if/then/else. We also
 introduce a stored variable `minimum`:
 
     @minimum :: tez = tz1.00 # with a default value
-    \p :: unit: (if self-amount < @minimum: fail; else: ())
+    fun p :: unit: if self-amount < @minimum: fail; | else: () end
 
 ## Queue
 
@@ -41,17 +41,18 @@ with a `?...|...|...` accessor.
     @j   :: nat = 0
     @map :: map nat data = map-empty
 
-    \parameter :: option data:
-    ( case parameter
+    fun parameter :: option data:
+    case parameter
     | Some data: @map <- map-update @j (Some data) @map;
                  @j <- @j + 1;
                  None
-    | None: ( case map-get @i @map
+    | None: case map-get @i @map
             | None: None
             | Some data: @map <- map-update @i None @map;
                          @i <- @i + 1;
-                         Some data ))
-
+                         Some data
+            end
+    end
 
 ## Data publisher
 
@@ -69,59 +70,66 @@ it would have been nice to write `Some (sig, data): ...`.
     @data :: data
     @fee  :: tez
 
-    \parameter :: operation:
-    ( case parameter
-    | None: ( case self-amount >= @fee
+    fun parameter :: operation:
+    case parameter
+    | None: case self-amount >= @fee
             | False: fail
-            | True:  @data )
+            | True:  @data
+			end
     | Some signed_data: let sig  = signed_data.0;
                         let data = signed_data.1;
-                        ( case crypto-check @key sig data
+                        case crypto-check @key sig data
                         | False: fail
-                        | True: @data <- data; data ))
+                        | True: @data <- data; data
+						end
+    end
 
 ## User accounts
 
-Nothing special about this contract either; it's made more readable than its 
-Michelson counterpart thanks to named operations and operation fields, and 
-thanks to the store update operations separated from result computation. 
+Nothing special about this contract either; it's made more readable than its
+Michelson counterpart thanks to named operations and operation fields, and
+thanks to the store update operations separated from result computation.
 
     type withdrawal = Key: key * Amount: tez * Signature: signature
     type operation = Deposit key + Withdrawal withdrawal
 
     @accounts :: map key tez
 
-    \ operation :: operation:
-    ( case operation
+    fun operation :: operation:
+    case operation
     | Deposit key:
-        let new_balance = ( case map-get key @accounts
+        let new_balance = case map-get key @accounts
                           | None:         self-amount            # Create new account
-                          | Some balance: self-amount + balance  # update existing account);
+                          | Some balance: self-amount + balance  # update existing account
+						  end;
         @accounts <- map-update key (Some new_balance) @accounts;
         ()
-    | Withdrawal w: (if not crypto-check w.Key w.Signature (crypto-hash w.Amount): fail);
-                    ( case map-get w.Key @accounts
+    | Withdrawal w: if not crypto-check w.Key w.Signature (crypto-hash w.Amount): fail end;
+                    case map-get w.Key @accounts
                     | None: fail  # withdrawal denied (no such account)
                     | Some balance:
-                        (if balance < w.Amount: fail);  # withdrawal denied (insufficient funds)
-                        let new_balance = ( case balance = w.Amount
+                        if balance < w.Amount: fail end;  # withdrawal denied (insufficient funds)
+                        let new_balance = case balance = w.Amount
                                           | True:  None                        # Delete empty account
                                           | False: Some (balance - w.Amount)); # update account
+										  end
                         @accounts <- map-update w.Key new_balance @accounts;
                         contract-call (contract-get w.Key) () w.Amount))
+					end
+	end
 
 ## King of Tez
 
-A contract that's all about updating the store (plus a very simple condition 
-checking). 
+A contract that's all about updating the store (plus a very simple condition
+checking).
 
     @royal_key         :: key
     @enthronement_date :: time
     @enthronement_cost :: tez
 
-    \parameter :: key:
+    fun parameter :: key:
     let one_week = 60 * 60 * 24 * 7;
-    (if self-now < @enthronement_date + one_week and self-amount < @enthronement_cost: fail);
+    if self-now < @enthronement_date + one_week and self-amount < @enthronement_cost: fail end;
     @royal_key         <- parameter;
     @enthronement_date <- self-now;
     @enthronement_cost <- self-amount;
@@ -129,11 +137,11 @@ checking).
 ## Some simpler examples
 
     # add1
-    \p :: int: p + 1
+    fun p :: int: p + 1
 
     # concat_string
     @stored_string :: string
-    \param: @stored_string ^ param
+    fun param: @stored_string ^ param
 
 ## Lock contract
 
@@ -141,45 +149,43 @@ checking).
     @amount       :: tez
     @destination  :: contract unit unit
 
-    \parameter :: unit:
+    fun parameter :: unit:
 
-    (if self-now < @release_date: fail | else: ());
+    if self-now < @release_date: fail | else: () end;
     contract-call @destination () @amount)
 
 ## Lambda, map, and creating contracts
 
 First, mapping a function on a list:
 
-    \param :: list int:
+    fun param :: list int:
+      let f = (fun x: x + 1);
+      list-map f param
 
-    let f = \x: x + 1;
-    list-map f param
+With the following example, something noteworthy is happening. When writing
+the current contract, Lamtez handles the boilerplate related to storage access
+and update. However, when a contract creates another contract, the later
+doesn't benefit from those features. It is initialized with a function of type
+`∀ parameter storage result: (parameter×storage) → (result×storage)`, and the
+manipulation of storage fields must be performed explicitly by the function
+body.
 
-With the following example, something noteworthy is happening. When writing 
-the current contract, Lamtez handles the boilerplate related to storage access 
-and update. However, when a contract creates another contract, the later 
-doesn't benefit from those features. It is initialized with a function of type 
-`∀ parameter storage result: (parameter×storage) → (result×storage)`, and the 
-manipulation of storage fields must be performed explicitly by the function 
-body. 
-
-Here, within the lambda, `x` is bound to a `int×unit` pair, applies the map 
-operation on the first half `x.0`, then pairs the result with a unit term 
-`()`. 
+Here, within the lambda, `x` is bound to a `int×unit` pair, applies the map
+operation on the first half `x.0`, then pairs the result with a unit term
+`()`.
 
 
     type t = (list int * unit)
 
-    \(param :: unit):
-
-    let map_add1 = \(x :: t): (list-map (\y: y+1) x.0, ());
-    let key = tz1SuakBpFdG9b4twyfrSMqZzruxhpMeSrE5;
-    contract-create key None False False self-amount map_add1
+    fun param :: unit:
+      let map_add1 = fun x :: t: (list-map (fun y: y+1) x.0, ());
+      let key = tz1SuakBpFdG9b4twyfrSMqZzruxhpMeSrE5;
+      contract-create key None False False self-amount map_add1
 
 ## Parameterizable payment contract
 
-This one is tedious to follow in Michelson, quite a bit of stack shuffling! 
-With named variables and labelled types, here's my version: 
+This one is tedious to follow in Michelson, quite a bit of stack shuffling!
+With named variables and labelled types, here's my version:
 
     type line    = Title: string * Amount: tez * Destination: contract unit unit
     type t_param = Register: line + Execute: nat
@@ -188,17 +194,19 @@ With named variables and labelled types, here's my version:
     @index    :: nat
     @map      :: map nat line
 
-    \p :: t_param:
-    ( case p
+    fun p :: t_param:
+    case p
     | Register line: @map <- map-update @index (Some line) @map;
                      @index <- @index + 1;
                      ()
     | Execute i: let response = contract-call @approver i tz0.00;
                  (if not response.1: fail);
-                 ( map-get i @map ?
+                 case map-get i @map
                  | None: fail  # This should not happen
                  | Some line: @map <- map-update i None @map;
-                              contract-call line.Destination () line.Amount))
+                              contract-call line.Destination () line.Amount
+                 end
+	end
 
 My `tz0.02` about this contract:
 
@@ -223,29 +231,31 @@ Here's a sketch of what this different version would look like:
     @approver :: contract nat bool
     @map      :: map string (account * tez)
 
-    \p :: t_param:
-    ( p ?
+    fun p :: t_param:
+    case p
     | Register line: let id = line.0;
-                     (if map-mem id @map: fail);
+                     if map-mem id @map: fail end;
                      let entry = (line.1, line.2);
                      @map <- map-update @index (Some entry) @map;
                      ()
-    | Execute id: (if not (contract-call @approver id tz0.00): fail);
-                  ( map-get id @map ?
+    | Execute id: if not (contract-call @approver id tz0.00): fail end;
+                  case map-get id @map
                   | None: fail  # This should not happen
                   | Some x: @map <- map-update i None @map;
-                            contract-call x.0 () x.1))
+                            contract-call x.0 () x.1
+	              end
+	end
 
 ## Some examples from the Michelson official doc
 
 ### Reservoir
 
-The [official Michelson 
-documentation](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md) 
-also comes with some smart contract examples. The simplest non-trivial one is 
-a reservoir contract (think of it as a simplified crowdfunding contract): 
-there's a time limit and a money limit; if the contract gets more than the 
-money threshold before the time threshold elapse, then the money goes to an 
+The [official Michelson
+documentation](https://github.com/tezos/tezos/blob/master/src/proto/alpha/docs/language.md)
+also comes with some smart contract examples. The simplest non-trivial one is
+a reservoir contract (think of it as a simplified crowdfunding contract):
+there's a time limit and a money limit; if the contract gets more than the
+money threshold before the time threshold elapse, then the money goes to an
 account; otherwise it goes to another (presumably for refunds).
 
     @time_threshold         :: time
@@ -261,10 +271,10 @@ account; otherwise it goes to another (presumably for refunds).
         contract-call @when_threshold_reached () self-balance
     | else: () )
 
-For a crowdfunding contract, we should remember who contributed what; and if 
-the money threshold faild to be reached within the time limit, then refunds 
-should be sent to the original contributors. However, this would require 
-a support for loops, since 
+For a crowdfunding contract, we should remember who contributed what; and if
+the money threshold faild to be reached within the time limit, then refunds
+should be sent to the original contributors. However, this would require
+a support for loops, since
 
 
 
@@ -283,9 +293,9 @@ so that the contract isn't destroyed and the status can be checked.
     @broker                 :: account
     @broker_fee             :: tez
 
-    \p :: unit:
+    fun p :: unit:
 
-    ( if
+    if
     ### If the contract is realized, don't call it again ###
     | @status != "open": fail
 
@@ -293,7 +303,7 @@ so that the contract isn't destroyed and the status can be checked.
     | self-now >= @time_threshold:
         @status <- "timeout";
         let available = self-balance - tz1.00;
-        let fee = (if available < @broker_fee: available | else: @broker_fee);
+        let fee = if available < @broker_fee: available | else: @broker_fee end;
         contract-call @broker () fee;
         contract-call @when_too_late () (self-balance - tz1.00)
 
@@ -306,7 +316,7 @@ so that the contract isn't destroyed and the status can be checked.
     ### Before timeout, not enough money yet, wait ###
     | else:
         ()
-    )
+    end
 
 ### Forward contract
 
@@ -336,7 +346,7 @@ non-standardized financial contract. Here's its Lamtez transcription:
     # between `T+24h` and `T+48h`. To know whether this has been done, we expect
     # a warehouse operator `W` to be connected to the blockchain, and to report
     # good deliveries to the contract. If according to `W` the agreed quantity
-    # has been delivered, the 
+    # has been delivered, the
 
     type parameter = Payment: string + Delivery: nat
 
@@ -352,19 +362,21 @@ non-standardized financial contract. Here's its Lamtez transcription:
     @paid_by_S :: tez
     @delivered :: nat
 
-    \parameter :: parameter:
+    fun parameter :: parameter:
 
     let one_day = 24 * 60 * 60;
 
-    ( if
+    if
     ### Between Z and Z+24h, accept collaterals from B and S ###
     | self-now  <  @Z + one_day:
-        ( case parameter
+        case parameter
         | Delivery _: fail  # Too early for delivery
-        | Payment whom: ( if
+        | Payment whom: if
                         | whom = "buyer":  @paid_by_B <- @paid_by_B + self-amount; ()
                         | whom = "seller": @paid_by_S <- @paid_by_S + self-amount; ()
-                        | else: fail))
+                        | else: fail
+						end
+        end
 
     ### After Z+24h, if collaterals haven't been sent, cancel and refund ###
     | self-balance  <  2*@Q*@C + tz1.00:  # Refund
@@ -378,11 +390,12 @@ non-standardized financial contract. Here's its Lamtez transcription:
 
     ### Between T and T+24h, accept payment by buyer from the full strike price ###
     | self-now  <  @T + one_day:
-        ( case parameter
+        case parameter
         | Delivery _: fail
-        | Payment whom: (if whom != "buyer": fail);
+        | Payment whom: if whom != "buyer": fail end;
                         @paid_by_B <- @paid_by_B + self-amount;
-                        (if @paid_by_B > @Q * @K: fail))  # Don't accept too much
+                        if @paid_by_B > @Q * @K: fail end  # Don't accept too much
+        end
 
     ### B failed to pay after T+24h => all the money goes to S ###
     | @paid_by_B != @Q * @K:
@@ -391,15 +404,15 @@ non-standardized financial contract. Here's its Lamtez transcription:
     ### Between T+24h and T+48h, accept Warehouse reports ###
     | self-now  <  @T + 2*one_day:
         let sender = contract-manager (self-source :: contract unit unit);
-        (if sender != contract-manager @W: fail);
-        ( case parameter
+        if sender != contract-manager @W: fail end;
+        case parameter
         | Payment _: fail
         | Delivery q: @delivered <- @delivered + q;
                     # Contract realized, pay S
-                    (if @delivered >= @Q: 
-                        contract-call @S () self-balance))
+                    if @delivered >= @Q: contract-call @S () self-balance end
+	    end
 
     ### S failed to deliver after T+48h => all the money goes to B ###
     | True:
         contract-call @B () self-balance  # Timeout, money goes to B
-    )
+    end

@@ -2,11 +2,12 @@
 @enthronement_date :: time
 @enthronement_cost :: tez
 
-\parameter :: key:
-( case @enthronement_date + 604800 > self-now || self-amount > @enthronement_cost
-| True: @royal_key <- parameter;
-        @enthronement_date <- self-now;
-        @enthronement_cost <- self-amount;
-        ()
-| False: fail
-)
+fun parameter :: key:
+if
+| @enthronement_date + 604800 > self-now || self-amount > @enthronement_cost:
+    @royal_key <- parameter;
+    @enthronement_date <- self-now;
+    @enthronement_cost <- self-amount;
+    ()
+| else: fail
+end

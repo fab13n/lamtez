@@ -41,7 +41,7 @@ let data_collection ?(loc=noloc) constr_name args =
 %token BAR STORE
 %token EQ NEQ LE LT GE GT CONCAT
 %token OR AND XOR PLUS MINUS STAR DIV LSR LSL
-%token TYPE LET IF CASE ELSE NOT
+%token TYPE LET IF CASE ELSE NOT END
 %token EOF
 
 %start <Ast.contract> contract
@@ -49,12 +49,14 @@ let data_collection ?(loc=noloc) constr_name args =
 %start <Ast.expr> data_parameter
 
 %right ARROW
-%left AND OR XOR
+%left OR XOR
+%left AND
 %nonassoc EQ NEQ
 %nonassoc LE LT GE GT
 %nonassoc LSR LSL
 %left PLUS MINUS
 %left STAR DIV
+%nonassoc NOT
 %%
 
 contract: d=etype_decl* s=store_decl* e=expr EOF {d, s, e}
@@ -112,29 +114,29 @@ expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
 | LAMBDA p=separated_nonempty_list(COMMA, parameter) t=lambda_annot COLON e=expr_sequence {
-  (* TODO put the lambda annot in outermost lambda *)
-  let fold (pe, pt) acc = ELambda(loc $startpos $endpos, pe, pt, acc, ([], fresh_tvar())) in
-  List.fold_right fold p e}
+    (* TODO put the lambda annot in outermost lambda *)
+    let fold (pe, pt) acc = ELambda(loc $startpos $endpos, pe, pt, acc, fresh_tvar()) in
+    List.fold_right fold p e}
 | LPAREN RPAREN {eunit_loc (loc $startpos $endpos)}
 | LPAREN e=expr RPAREN {e}
 | LPAREN e0=expr COMMA rest=separated_nonempty_list(COMMA, expr) RPAREN {
-  let loc = loc $startpos $endpos in 
-  etuple ~loc (e0::rest) }
+    let loc = loc $startpos $endpos in 
+    etuple ~loc (e0::rest) }
 | LPAREN e0=expr SEMICOLON rest=separated_nonempty_list(SEMICOLON, expr) RPAREN {
-  let loc = loc $startpos $endpos in 
+    let loc = loc $startpos $endpos in 
   esequence ~loc (e0::rest) }
-| LPAREN CASE e=expr BAR c=separated_list(BAR, sum_case) RPAREN {ESumCase(loc $startpos $endpos, e, c)}
-| LPAREN IF BAR? c=separated_list(BAR, if_case) RPAREN {let loc=loc $startpos $endpos in eif ~loc c}
+| CASE e=expr BAR c=separated_list(BAR, sum_case) END {ESumCase(loc $startpos $endpos, e, c)}
+| IF BAR? c=separated_list(BAR, if_case) END {let loc=loc $startpos $endpos in eif ~loc c}
 
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
-| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, snd p, e0, e1)} (* TODO keep annotation if present *)
+| LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, ([], snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
 | e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(loc $startpos $endpos, e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(loc $startpos $endpos, e, n)}
 | STORE s=store_tag  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
 | STORE s=store_tag LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}
 
-lambda_annot: TYPE_ANNOT t=etype {[], t} | {[], fresh_tvar()}
+lambda_annot: TYPE_ANNOT t=etype {t} | {fresh_tvar()}
 
 expr:
 | f=expr0 args=expr_arg* { app (loc $startpos $endpos) f args }
@@ -188,8 +190,9 @@ product_pair: tag=TAG COLON? expr=expr {tag, expr}
 
 parameter:
 /* | id=ID {PId id, ([], fresh_tvar ~prefix:id ())} */
-| p=pattern {p, ([], fresh_tvar())}
-| p=pattern TYPE_ANNOT t=scheme {p, t}
+| p=pattern {p, fresh_tvar()}
+| p=pattern TYPE_ANNOT t=etype {p, t}
+/* TODO allow schemes in lets, not in lambdas */
 
 pattern:
 | id=ID { PId id}

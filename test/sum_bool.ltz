@@ -1,8 +1,8 @@
 type sum = Int_0 int + Bool_1 bool
 
-\param :: unit:
-  let x = ( case Int_0 (+1)
+fun param :: unit:
+  let x = case Int_0 (+1)
           | Int_0 i:  Int_0  (i - 1)
           | Bool_1 b: Bool_1 (b || False)
-          );
+          end;
   x

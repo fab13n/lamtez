@@ -2,9 +2,9 @@ type op = AddValue: int + RunValue: nat
 
 @values :: (list int) = (list +1 +2 +3)
 
-\p :: op:
-( case p
+fun p :: op:
+case p
 # should be (\i: i + n), but list-map won't take closures 
 | RunValue n: Some (list-map (\i :: int: i + 1) @values)
 | AddValue v: @values <- Cons (v, @values); None
-)
+end

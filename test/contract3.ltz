@@ -1,5 +1,6 @@
 @c :: contract nat unit
-\p :: nat:
+
+fun p :: nat:
 let _ = contract-call @c p tz0.10;
 let b = True;
 let _ = contract-call @c p tz0.20;

@@ -69,19 +69,20 @@ let rec string_of_pattern = function
     "{"^sep_list "; " f list^"}"
 
 let rec string_of_expr =
-  let soe = string_of_expr in
-  let sos = string_of_scheme in
+  let soe = string_of_expr 
+  and sot = string_of_type
+  and sos = string_of_scheme in
   function
   | ELit(_, c) -> string_of_lit c
   | EColl(_, kind, list) ->
     "("^string_of_collection_kind kind^" "^sep_list " " soe list^")"
   | EId(_, s) -> s
   | ELambda(_, _, _, _, tr) as e ->
-    let type_annot = if is_fresh_tvar (snd tr) then "" else " :: "^sos tr in
+    let type_annot = if is_fresh_tvar tr then "" else " :: "^sot tr in
     let rec f = function
       | ELambda(_, p, tp, e, te) ->
-        let p = if is_fresh_tvar (snd tp) then (string_of_pattern p) 
-          else string_of_pattern p^" :: "^sos tp in
+        let p = if is_fresh_tvar tp then (string_of_pattern p) 
+          else string_of_pattern p^" :: "^sot tp in
         p^" "^f e
       | e -> type_annot^": "^soe e in
     "(λ"^f e^")"

@@ -1,10 +1,10 @@
-\_ :: unit:
+fun _ :: unit:
 
 let m = +123;
 let n = +234;
 let flag = False;
-let f = (\x :: nat: (if flag: x+m | else: x+n));
+let f = (fun x :: nat: if flag: x+m | else: x+n end);
 
-let g = (\x :: nat: x + 1);
+let g = (fun x :: nat: x + 1);
 
 (f 345, g 456)

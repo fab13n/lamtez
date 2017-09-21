@@ -45,6 +45,7 @@ rule read = parse
 | "if" {IF}
 | "case" {CASE}
 | "else" {ELSE}
+| "end" {END}
 | ';' {SEMICOLON}
 | "<-" {LEFT_ARROW}
 | "\\/" {FORALL}
@@ -63,7 +64,8 @@ rule read = parse
 | '.' tag {PRODUCT_GET(trim lexbuf 1 0)}
 
 | '(' {LPAREN} | ')' {RPAREN} 
-| '\\' {LAMBDA} | "->" {ARROW}
+| '\\' {LAMBDA} | "fun" {LAMBDA}
+| "->" {ARROW}
 | ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}

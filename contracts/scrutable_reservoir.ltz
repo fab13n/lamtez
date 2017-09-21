@@ -6,9 +6,9 @@
 @broker                 :: account
 @broker_fee             :: tez
 
-\p :: unit:
+fun p :: unit:
 
-( if
+if
 ### If the contract is realized, don't call it again ###
 | @status != "open": fail
 
@@ -16,7 +16,7 @@
 | self-now >= @time_threshold:
     @status <- "timeout";
     let available = self-balance - tz1.00;
-    let fee = (if available < @broker_fee: available | else: @broker_fee);
+    let fee = if available < @broker_fee: available | else: @broker_fee end;
     contract-call @broker () fee;
     contract-call @when_too_late () (self-balance - tz1.00)
 
@@ -29,4 +29,4 @@
 ### Before timeout, not enough money yet, wait ###
 | else:
     ()
-)
+end

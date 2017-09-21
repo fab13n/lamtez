@@ -37,19 +37,21 @@ type parameter = Payment: string + Delivery: nat
 @paid_by_S :: tez
 @delivered :: nat
 
-\parameter :: parameter:
+fun parameter :: parameter:
 
 let one_day = 24 * 60 * 60;
 
-(if
+if
 ### Between Z and Z+24h, accept collaterals from B and S ###
 | self-now  <  @Z + one_day:
-    ( case parameter
+    case parameter
     | Delivery _: fail  # Too early for delivery
-    | Payment whom: ( if
+    | Payment whom: if
                     | whom = "buyer":  @paid_by_B <- @paid_by_B + self-amount; ()
                     | whom = "seller": @paid_by_S <- @paid_by_S + self-amount; ()
-                    | else: fail))
+                    | else: fail
+                    end
+    end
 
 ### After Z+24h, if collaterals haven't been sent, cancel and refund ###
 | self-balance  <  2*@Q*@C + tz1.00:  # Refund
@@ -63,11 +65,13 @@ let one_day = 24 * 60 * 60;
 
 ### Between T and T+24h, accept payment by buyer from the full strike price ###
 | self-now  <  @T + one_day:
-    ( case parameter
+    case parameter
     | Delivery _: fail
-    | Payment whom: (if whom != "buyer": fail);
+    | Payment whom: if whom != "buyer": fail end;
                     @paid_by_B <- @paid_by_B + self-amount;
-                    (if @paid_by_B > @Q * @K: fail ))  # Don't accept too much
+                    if @paid_by_B > @Q * @K: fail end  # Don't accept too much
+    end
+
 ### B failed to pay after T+24h => all the money goes to S ###
 | @paid_by_B != @Q * @K:
     contract-call @S () self-balance
@@ -75,15 +79,15 @@ let one_day = 24 * 60 * 60;
 ### Between T+24h and T+48h, accept Warehouse reports ###
 | self-now  <  @T + 2*one_day:
     let sender = contract-manager (self-source :: contract unit unit);
-    (if sender != contract-manager @W: fail);
-    ( case parameter
+    if sender != contract-manager @W: fail end;
+    case parameter
     | Payment _: fail
     | Delivery q: @delivered <- @delivered + q;
                   # Contract realized, pay S
-                  (if @delivered >= @Q: 
-                      contract-call @S () self-balance))
+                  if @delivered >= @Q:  contract-call @S () self-balance end
+    end
 
 ### S failed to deliver after T+48h => all the money goes to B ###
-| True:
+| else:
     contract-call @B () self-balance  # Timeout, money goes to B
-)
+end

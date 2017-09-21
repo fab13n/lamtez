@@ -2,7 +2,7 @@
 
 type str_bool = Str: string * Bool: bool
 @x :: (int * str_bool)
-\p :: unit :: unit:
+fun p :: unit :: unit:
   let (n, {Str: txt, Bool: flag}) = @x;
   @x <- (n + 1, {Str: txt ^ "!", Bool: not flag});
   ()

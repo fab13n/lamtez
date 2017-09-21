@@ -1,4 +1,4 @@
-\p :: unit:
+fun p :: unit:
 let my_list = (list 1 2 3);
 let my_map  = (map "a" 1 "b" 2 "c" 3);
 let my_set  = (set +1 -2 +3);

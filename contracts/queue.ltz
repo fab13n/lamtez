@@ -4,13 +4,15 @@ type data = string
 @j   :: nat
 @map :: map nat data
 
-\parameter :: option data:
-( case parameter
+fun parameter :: option data:
+case parameter
 | Some data: @map <- map-update @j (Some data) @map;
              @j <- @j + 1;
              None
-| None: ( case map-get @i @map
+| None: case map-get @i @map
         | None: None
         | Some data: @map <- map-update @i None @map;
                      @i <- @i + 1;
-                     Some data))
+                     Some data
+        end
+end
