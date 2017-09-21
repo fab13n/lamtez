@@ -28,7 +28,7 @@ contract exmaples from [http://michelson-lang.com] and
 ## Cheat sheet
 
 For a quick summary of the language syntax and main features, a PDF two-pages
-summary is available as https://github.com/fab13n/lamtez/blob/master/CHEAT_SHEET.pdf.
+summary is available as https://github.com/fab13n/lamtez/raw/master/CHEAT-SHEET.pdf.
 
 ## General considerations on the language
 
