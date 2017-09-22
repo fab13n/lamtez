@@ -118,24 +118,35 @@ let rec tlambda ?(loc=noloc) l = match l with
   | [] -> raise (Invalid_argument "tlambda")
   | [t] -> t 
   | t :: ts' -> TLambda(loc, t, tlambda ts')
+
 let tapp ?(loc=noloc) name args = TApp(noloc, name, args)
+
 let tprim ?(loc=noloc) id = tapp id []
+
 let tzero = tprim "zero" 
+
 let tunit = TTuple(noloc, [])
+
 let toption ?(loc=noloc) x = tapp "option" [x]
+
 let tid ?(loc=noloc) id = TId(loc, id)
+
 let ttuple ?(loc=noloc) list = match list with
 | [] -> tunit
 | [t] -> t
 | list -> TTuple(loc, list)
 
-  let eid ?(loc=noloc) id = EId(loc, id)
+let eid ?(loc=noloc) id = EId(loc, id)
+
 let eunit_loc ~loc = ETuple(loc, [])
+
 let eunit = eunit_loc noloc
+
 let etuple ?(loc=noloc) list = match list with
   | [] -> eunit_loc ~loc
   | [e] -> e
   | list -> ETuple(loc, list) 
+
 let esum ?(loc=noloc) id args = 
   let arg = match args with
   | [] -> eunit
@@ -144,13 +155,16 @@ let esum ?(loc=noloc) id args =
     let loc = loc2e (List.hd list) (List.hd (List.rev list)) in
     etuple ~loc list in
   ESum(loc, id, arg) 
+
 let eapp = function [] -> assert false | f :: args ->
   let l1 = loc_of_expr f in
   let fold acc arg =
     let loc = loc2 l1 (loc_of_expr arg) in
     EApp(loc, acc, arg) in
   List.fold_left fold f args
+
 let esequence ?(loc=noloc) l = ESequence(loc, l)
+
 let eif ?(loc=noloc) list = (* TODO handle locs better *)
   let rec f = function
     | [cond, body_then; ESum(_, "True", _), body_else] -> 

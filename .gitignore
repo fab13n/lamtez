@@ -16,3 +16,5 @@ lamtez
 michelson/*.param
 michelson/*.data
 tezos-client-help.txt
+CHEAT-SHEET.log
+CHEAT-SHEET.aux

@@ -45,7 +45,7 @@
   <expression>
 \end{Verbatim}
 The expression must denote a function, taking a parameter and
-returning a result.
+returning a result. If types can't be innferred from the code, they must be annotated.
 
 
 \section{Type declarations}
@@ -110,44 +110,45 @@ produce an initial store value litteral (option
 
 \subsection{Litterals}
 
-{\bf Natural numbers:} \verb|[0-9]+|\\
+{\bf Natural numbers:} \fbox{\tt~[0-9]+~}\\
 e.g. \verb|1|, \verb|123456|
 
-{\bf Signed integers:} \verb%(+|-)[0-9]+%\\
+{\bf Signed integers:} \fbox{\tt~(+|-)[0-9]+~}\\
 e.g. \verb|+1|, \verb|-2|, \verb|+0|.\\
 Plus sign is mandatory for ints $\geq0$.\\
 Beware that \verb|f+1| (without space) is parsed as \verb|f(+1)|, not \verb|f + 1|.
 
-{\bf Tez:} \verb%tz<d>*.<dd> | tz<d>+%\\
+{\bf Tez:} \fbox{\tt~tz<d>*.<dd> | tz<d>+~}\\
 where \verb|<d>| is a decimal digit, \verb|<dd>| a pair thereof.\\
 e.g. \verb|tz1|, \verb|tz2.00|, \verb|tz.02|.
 
-{\bf Key hashes:} \verb%tz1<b58_char>+%\\
+{\bf Key hashes:} \fbox{\tt~tz1<b58\_char>+~}\\
 e.g. \verb|tz1MGxkasF5ABVVrxzxGbWo8wPg7EaLKn4RS|
 
-{\bf Signatures:} \verb|sig:[0-9a-f]+|\\
+{\bf Signatures:} \fbox{\tt~sig:[0-9a-f]+~}\\
 e.g. \verb|sig:91b334be19d66d30205563b426c2f9b3|...
 
-{\bf Date:} \verb%dddd-dd-ddTdd:dd:ddZ |%\\
-\verb%     dddd-dd-ddTdd:dd:dd(+|-)dd(:dd?))%\\
-where \verb|d| is a decimal digit.\\
+{\bf Date:} \fbox{
+  \begin{minipage}{5.5cm}
+  \tt dddd-dd-ddTdd:dd:ddZ |\\
+    dddd-dd-ddTdd:dd:dd(+|-)dd(:dd?)
+  \end{minipage}}\\
+where \verb|d| are decimal digits.\\
 e.g. \verb|1970-01-01T00:00:00Z|,\\
 \verb|    2014-09-02T12:34:56+02:00|
 
-{\bf String:} \verb|"[^"]*"|:\\
+{\bf String:} \fbox{\tt~"[\^{ }"]*"~}:\\
 e.g. \verb|"foo"|, \verb|"hello \"world\""|.\\
 Must fit on a single line, double quotes escaped with backslashes;
 same escaped characters as Michelson.
 
 \subsection{Composite types and collections}
 \begin{Verbatim}[frame=single]
-{ <Label_0>: <expr_0>, ...,
-  <Label_n>: <expr_n>}   # labelled product
-(<expr_0>, ..., <expr_n) # tuple
-(list <expr_0> ... <expr_n>)
-(set <expr_0> ... <expr_n>)
-(map <expr_k0> <expr_v0> ...
-     <expr_kn> <expr_vn>)
+{ <Label_0>:<expr_0>,...,<Label_n>:<expr_n>} # Product
+(<expr_0>, ..., <expr_n)                     # Tuple
+(list <expr_0> ... <expr_n>)                 # List
+(set <expr_0> ... <expr_n>)                  # Set
+(map <expr_k0> <expr_v0>...<expr_kn> <expr_vn>) # Map
 \end{Verbatim}
 
 \subsection{Identifiers}
@@ -157,7 +158,7 @@ characters, underscores and dashes.
 \subsection{Functions}
 \begin{Verbatim}[frame=single]
 fun (<pattern>(::<type_param>)?)+ (::<type_result>)?:
-    <expr>
+   <expr>
 \end{Verbatim}
 
 As in ML, arguments are separated by spaces without mandatory
@@ -230,9 +231,9 @@ deconstructed with a sum type.
 \subsubsection{If then else / switch}
 \begin{Verbatim}[frame=single]
 if
-| <expr_cond_0>: <expr__if_true_0>
+| <expr_cond_0>: <expr_if_true_0>
 | ...
-| <expr_cond_n>: <expr__if_true_n>
+| <expr_cond_n>: <expr_if_true_n>
 | else: <expr_if_everything_false>
 end
 \end{Verbatim}
@@ -243,18 +244,19 @@ ommitted if the result type is \verb|unit|.
 
 \subsection{Field access}
 \begin{Verbatim}[frame=single]
-<expr>.<d>
-<expr>.<label>
-@<name>
-@<name> <- <expr>;
-<label> <expr>
+<expr>.<d>         # Tuple field access
+<expr>.<label>     # Product type field access
+@<name>            # Persistent field access
+@<name> <- <expr>; # Persistent field update
+<label> <expr>     # Sum type constructor
 \end{Verbatim}
 Tuple fields are accessed with a dot followed by the field number, 0-indexed.
 
 Labelled product fiels are accessed with a dot followed by the field label.
 
 Persistent storage fields are accessed with ``\verb|@|'' followed by
-the field name.  They can be updated with \verb|@<name> <- <expr>;|,
+the field name.  They can be updated
+with \verb|@<name> <- <expr>;|,
 but such operations cannot occur in a function, a litteral product or
 a function argument.
 
@@ -269,6 +271,15 @@ let s :: option nat = Some 42; # Sum constr.
 let x = not @field;            # store access
 @field <- x                    # store update
 \end{Verbatim}
+
+\subsection{Type annotations}
+\begin{Verbatim}[frame=single]
+<expr> :: <type>
+\end{Verbatim}
+
+Michelson doesn't support polymorphic types. To prevent Lamtez from guessing
+such types, as well as to improve contract readbility, you might have to add
+type annotations.
 
 \vfill\null\columnbreak
 
@@ -292,7 +303,7 @@ prefix sign for a signed literal integer.
 
 
 \subsubsection{Unary operators}
-\verb|-e|, \verb|not e|.\\
+\verb|-<expr>|, \verb|not <expr>|.\\
 Precedence higher than binary ops, lower than field accessors and
 function applications.
 

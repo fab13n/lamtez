@@ -21,40 +21,34 @@ let debug_indent = ref 0
  * Pushes the pattern variables into ctx' expression variables;
  * Keeps a bookmark to allow the removal of those evars.
  *)
- (* TODO: scheme/type distinction is messy around here. *)
-let rec push_pattern_types ctx pattern etype : (Ctx.t*Ctx.bookmark) = match pattern with
+let rec push_pattern_bindings ctx pattern etype : (Ctx.t*Ctx.bookmark) =
+  match pattern with
   | A.PId id ->
     let scheme = ([], etype) in
     Ctx.push_evars [id, scheme] ctx
   | A.PAny -> ctx, Ctx.bookmark_empty
   | A.PTuple plist ->
     let tlist = List.map (fun _ -> A.fresh_tvar ~prefix:"tuple" ()) plist in
-    let tuple_type = A.TTuple(A.noloc, tlist) in
-    let ctx, _ = Ctx.unify ctx etype tuple_type in
+    let ctx, _ = Ctx.unify ctx etype (A.ttuple tlist) in
     let fold (ctx, bmrk) p t = 
-      let ctx, bmrk' = push_pattern_types ctx p t in
+      let ctx, bmrk' = push_pattern_bindings ctx p t in
       ctx, bmrk @ bmrk' in
     List.fold_left2 fold (ctx, Ctx.bookmark_empty) plist tlist
   | A.PProduct tagged_pattern_list ->
     (* Assume that etype has the corresponding product's type,
      * and that every field has the corresponding field type *)
     let pname = Ctx.name_of_product_tag ctx (fst @@ List.hd tagged_pattern_list) in
-    let tprod = A.TApp(A.noloc, pname, []) in (* TODO check that the product type isn't polymorphic *)
-    let [], tagged_type_list = Ctx.product_of_name ctx pname in
+    let tprod, tagged_type_list = Ctx.instantiate_composite pname @@ Ctx.product_of_name ctx pname in
     let ctx, _ = Ctx.unify ctx etype tprod in
-    let rec f ctx bmrk = function
-      | [] -> ctx, bmrk
-      | (tag, p) :: other_tagged_patterns ->
-        let t = List.assoc tag tagged_type_list in
-        let ctx, bmrk = push_pattern_types ctx p t in
-        f ctx bmrk other_tagged_patterns in
-    f ctx Ctx.bookmark_empty tagged_pattern_list
+    let fold (ctx, bmrk) (tag, pattern) =
+      let etype = List.assoc tag tagged_type_list in
+      let ctx, bmrk' = push_pattern_bindings ctx pattern etype in
+      ctx, bmrk@bmrk' in
+    List.fold_left fold (ctx, Ctx.bookmark_empty) tagged_pattern_list
 
 let rec typecheck_expr ctx expr =
   if !_DEBUG_ then begin
-    (* print_endline ("\n"^String.make 80 '*'); *)
     print_endline (String.make (2 * !debug_indent) ' '^"Typing "^P.string_of_expr expr);
-    (* print_endline ("In context: "^Ctx.string_of_t ctx); *)
     incr debug_indent
   end;
 
@@ -73,7 +67,7 @@ let rec typecheck_expr ctx expr =
   | A.EColl(_, A.CSet,  list) -> typecheck_EColl_CSet  ctx list
   | A.EId(_, id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
-    ctx, Ctx.instantiate_scheme (scheme)
+    ctx, Ctx.instantiate_scheme scheme
   | A.ELambda(_, pattern, sp, e, se) -> typecheck_ELambda ctx expr pattern sp e se
   | A.ELet(_, id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
   | A.EApp(_, f, arg) -> typecheck_EApp ctx f arg
@@ -132,9 +126,9 @@ and typecheck_EColl_CSet ctx elts =
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
 and typecheck_ELambda ctx l pattern tp ebody tb =
-  (* TODO fail if id is bound by default ctx? *)
+  (* TODO forbid global vars shadowing? *)
   (* Type e supposing that id has type t_arg. *)
-  let ctx, bmrk = push_pattern_types ctx pattern tp in
+  let ctx, bmrk = push_pattern_bindings ctx pattern tp in
   let ctx, tb'  = typecheck_expr ctx ebody in
   let ctx, tb   = Ctx.unify ctx tb tb' in
   let ctx       = Ctx.pop_evars bmrk ctx in
@@ -148,12 +142,13 @@ and typecheck_ELambda ctx l pattern tp ebody tb =
     ctx, A.tapp "closure" [A.ttuple tenv; tp; tb]
 
 and typecheck_ELetIn ctx pattern sp e0 e1 =
+  (* TODO forbid global vars shadowing? *)
   if fst sp <> [] then unsupported "Polymorphic types";
-  (* TODO fail if id is bound by default ctx? *)
-  let ctx, t0 = typecheck_expr ctx e0 in
-  let ctx, t0 = Ctx.unify ctx (snd sp) t0 in
-  (* TODO: generalize t0? *)
-  let ctx, bmrk = push_pattern_types ctx pattern (snd sp) in
+  let ctx, t0   = typecheck_expr ctx e0 in
+  let ctx, t0   = Ctx.unify ctx (snd sp) t0 in
+  let ctx, bmrk = push_pattern_bindings ctx pattern (snd sp) in
+  (* TODO let-gen: tvars in bookmarked evars which don't occur anywhere else
+   * in `ctx` can be generalized in these evars' type schemes. *)
   let ctx, t1 = typecheck_expr ctx e1 in
   let ctx = Ctx.pop_evars bmrk ctx in
   ctx, t1
@@ -214,9 +209,9 @@ and typecheck_ESumCase ctx e e_cases =
   (* TODO check that declaration and case domains are equal. *)
   let ctx, t_pairs = list_fold_map
     (fun ctx (tag, (p, e)) ->
-      (* TODO fail if v is bound by default ctx? *)
+      (* TODO forbid global vars shadowing? *)
       let t = List.assoc tag case_types in
-      let ctx, bmrk = push_pattern_types ctx p t in
+      let ctx, bmrk = push_pattern_bindings ctx p t in
       let ctx, t = typecheck_expr ctx e in
       let ctx = Ctx.pop_evars bmrk ctx in
       ctx, (tag, t))
