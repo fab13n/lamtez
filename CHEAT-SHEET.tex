@@ -198,7 +198,7 @@ identifiers, or as binding patterns (nested product types).
   <id>
 | _
 | (<pattern_0>,...,<pattern_n>)
-| {<label_0>:<pattern_0>,...,<label_n>:<pattern_n>}
+| {<Label_0>:<pattern_0>,...,<Label_n>:<pattern_n>}
 \end{Verbatim}
 When binding an identifier and a value (in function parameters, let
 declarations and sum cases), patterns for product types and tuples can
@@ -244,11 +244,12 @@ ommitted if the result type is \verb|unit|.
 
 \subsection{Field access}
 \begin{Verbatim}[frame=single]
-<expr>.<d>         # Tuple field access
-<expr>.<label>     # Product type field access
-@<name>            # Persistent field access
-@<name> <- <expr>; # Persistent field update
-<label> <expr>     # Sum type constructor
+<expr>.<d>                # Tuple field access
+<expr>.<Label>            # Product type field access
+<expr> <- <Label>: <expr> # Product type field update
+@<name>                   # Persistent field access
+@<name> <- <expr>;        # Persistent field update
+<Label> <expr>            # Sum type constructor
 \end{Verbatim}
 Tuple fields are accessed with a dot followed by the field number, 0-indexed.
 
@@ -372,24 +373,22 @@ val crypto-hash  :: $\forall$a: a $\rightarrow$ string
 \subsection{Collections}
 
 \begin{lstlisting}
-val list-map   :: $\forall$a,b: (a$\rightarrow$b) $\rightarrow$ list a $\rightarrow$ list b
+val list-map   :: $\forall$a,b: list a $\rightarrow$ (a$\rightarrow$b) $\rightarrow$ list b
 val list-reduce:: $\forall$a,acc:
-    (a$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ list a $\rightarrow$ acc $\rightarrow$ acc
+    list a $\rightarrow$ acc $\rightarrow$ (a$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ acc
 val list-size  :: $\forall$a: list a $\rightarrow$ nat
-val set-empty  :: $\forall$elt: set elt
-val set-map    :: $\forall$a,b: (a$\rightarrow$b) $\rightarrow$ set a $\rightarrow$ set b
+val set-map    :: $\forall$a,b: set a $\rightarrow$ (a$\rightarrow$b) $\rightarrow$ set b
 val set-mem    :: $\forall$elt: set elt $\rightarrow$ elt $\rightarrow$ bool
 val set-reduce :: $\forall$elt acc:
-    (elt$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ set elt $\rightarrow$ acc $\rightarrow$ acc
+    set elt $\rightarrow$ acc $\rightarrow$ (elt$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ acc
 val set-update :: $\forall$elt: elt $\rightarrow$ bool $\rightarrow$ set elt
 val set-size   :: $\forall$elt: set elt $\rightarrow$ nat
-val map-empty  :: $\forall$k,v: map k v
 val map-get    :: $\forall$k,v: k $\rightarrow$ map k v $\rightarrow$ option v
 val map-map    :: $\forall$k,v0,v1:
-    (k$\rightarrow$v0$\rightarrow$v1) $\rightarrow$ map k v0 $\rightarrow$ map k v1
+    map k v0 $\rightarrow$ (k$\rightarrow$v0$\rightarrow$v1) $\rightarrow$ map k v1
 val map-mem    :: $\forall$k,v: k $\rightarrow$ map k v $\rightarrow$ bool
 val map-reduce :: $\forall$k,v,acc:
-    (k$\rightarrow$v$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ map k v $\rightarrow$ acc $\rightarrow$ acc
+    map k v $\rightarrow$ acc (k$\rightarrow$v$\rightarrow$acc$\rightarrow$acc) $\rightarrow$ $\rightarrow$ acc
 val map-update :: $\forall$k,v:
     k $\rightarrow$ option v $\rightarrow$ map k v $\rightarrow$ map k v
 val map-size   :: $\forall$k,v: map k v $\rightarrow$ nat

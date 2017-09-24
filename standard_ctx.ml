@@ -71,23 +71,21 @@ let ctx = empty
 
   (* sets *)
 
-  |> add_evar "set-empty" (["elt"], tapp "set" [tid "elt"])
   |> add_evar "set-mem"  (["elt"], tlambda [tapp "set" [tid "elt"]; tid "elt"; tprim "bool"])
   |> add_evar "set-update"
     (["elt"], tlambda [tid "elt"; tprim "bool"; tapp "set" [tid "elt"]])
   |> add_evar "set-map"
-    (["a"; "b"], tlambda [tlambda [tid "a"; tid "b"];
-                          tapp "set" [tid "a"];
+    (["a"; "b"], tlambda [tapp "set" [tid "a"];
+                          tlambda [tid "a"; tid "b"];
                           tapp "set" [tid "b"]])
   |> add_evar "set-reduce"
-    (["elt"; "acc"], tlambda [tlambda [tid "elt"; tid "acc"; tid "acc"];
-                              tapp "set" [tid "elt"];
+    (["elt"; "acc"], tlambda [tapp "set" [tid "elt"];
                               tid "acc";
+                              tlambda [tid "elt"; tid "acc"; tid "acc"];
                               tid "acc"])
 
   (* maps *)
 
-  |> add_evar "map-empty" (["k"; "v"], tapp "map" [tid "k"; tid "v"])
   |> add_evar "map-mem"
     (["k"; "v"], tlambda [tid "k";
                           tapp "map" [tid "k"; tid "v"];
@@ -102,25 +100,25 @@ let ctx = empty
                           tapp "map" [tid "k"; tid "v"];
                           tapp "map" [tid "k"; tid "v"]])
   |> add_evar "map-map"
-    (["k"; "v0"; "v1"], tlambda [tlambda [tid "k"; tid "v0"; tid "v1"];
-                                 tapp "map" [tid "k"; tid "v0"];
+    (["k"; "v0"; "v1"], tlambda [tapp "map" [tid "k"; tid "v0"];
+                                 tlambda [tid "k"; tid "v0"; tid "v1"];
                                  tapp "map" [tid "k"; tid "v1"]])
   |> add_evar "map-reduce"
-    (["k"; "v"; "acc"], tlambda [tlambda [tid "k"; tid "v"; tid "acc"; tid "acc"];
-                                 tapp "map" [tid "k"; tid "v"];
+    (["k"; "v"; "acc"], tlambda [tapp "map" [tid "k"; tid "v"];
                                  tid "acc";
+                                 tlambda [tid "k"; tid "v"; tid "acc"; tid "acc"];
                                  tid "acc"])
 
   (* lists *)
 
   |> add_evar "list-map"
-    (["a"; "b"], tlambda [tlambda [tid "a"; tid "b"];
-                          tapp "list" [tid "a"];
+    (["a"; "b"], tlambda [tapp "list" [tid "a"];
+                          tlambda [tid "a"; tid "b"];
                           tapp "list" [tid "b"]])
   |> add_evar "list-reduce"
-    (["a"; "acc"], tlambda [tlambda [tid "a"; tid "acc"; tid "acc"];
-                            tapp "list" [tid "a"];
+    (["a"; "acc"], tlambda [tapp "list" [tid "a"];
                             tid "acc";
+                            tlambda [tid "a"; tid "acc"; tid "acc"];
                             tid "acc"])
 
 

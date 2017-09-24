@@ -25,16 +25,27 @@ let prim_translations = [
 
 let rec compile_etype ctx t =
   let c = compile_etype ctx in
+  let split_function_args t =
+    let rec rev_split_args = function 
+    | A.TLambda(_, arg, result)
+    | A.TApp(_, "result", [_; arg; result]) ->
+      let args, result = rev_split_args result in arg::args, result
+    | t -> [], t in
+    let rev_args, result = rev_split_args t in
+    List.rev rev_args, result in
+
   match t with
   | A.TId(_, id) ->
     begin match Ctx.expand_type ctx t with (* TODO the re-expansion shouldn't be necessary here *)
     | A.TId(_, id) -> failwith ("unresolved type variable "^id)
     | t -> c t
     end
-  | A.TLambda _ as t ->
-    let rec get = function A.TLambda(_, a, b) -> let p, t = get b in a::p, t | t -> [], t in
-    let params, result = get t in
-    I.TLambda(List.map c params, c result)
+  | A.TLambda _ ->
+    let args, result = split_function_args t in
+    I.TLambda(List.map c args, c result)
+  | A.TApp(_, "closure", _) as t ->
+    let args, result = split_function_args t in
+    I.TPrim("closure", c result :: List.map c args)
   | A.TTuple(_, list) -> I.TProduct(None, lazy(List.map c list))
   | A.TApp(_, name, args) -> begin match Ctx.decl_of_name ctx name with
     | A.DProduct(_, name, params, fields) ->
@@ -142,16 +153,17 @@ let rec compile_expr ctx e =
   | A.EId(_, id) -> I.EId id, it
 
   | A.ELambda _ as e ->
-    let rec get = function A.ELambda(_, p, _, b, _) ->
-      let a = match p with A.PId a -> a | _ -> not_impl"patterns in lambdas" in
-      let p, t = get b in a::p, t | t -> [], t in
-      let param_names, body = get e in
-      let param_types = match it with
-      | I.TLambda(p, _) -> p (* TODO multi-parameter functions will always be closures. *)
-      | I.TPrim("closure", [_; p; _]) -> [p] 
-      | _ -> unsound "bad lambda type" in
-      let typed_names = List.map2 (fun n t -> n, t) param_names param_types in
-      I.ELambda(typed_names, c body), it
+    (* Get nested param vars and types *)
+    let rec split_param_names = function
+      | A.ELambda(_, A.PId var, _, e_body, t_body) ->
+        let vars, body = split_param_names e_body in
+        var :: vars, e_body
+      | non_lambda_expr -> [], non_lambda_expr in
+    let rev_param_names, body_expr = split_param_names e in
+    let param_types = match it with
+      | I.TLambda(p, _) | I.TPrim("closure", _ ::p) -> p | _ -> unsound "lambda" in
+    let typed_names = List.map2 (fun n t -> n, t) (List.rev rev_param_names) param_types in
+    I.ELambda(typed_names, c body_expr), it
 
   | A.ELet(_, p, ps, e0, e1) ->
     assert (fst ps = []);

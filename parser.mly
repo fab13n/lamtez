@@ -49,6 +49,7 @@ let data_collection ?(loc=noloc) constr_name args =
 %start <Ast.expr> data_parameter
 
 %right ARROW
+%left LEFT_ARROW
 %left OR XOR
 %left AND
 %nonassoc EQ NEQ
@@ -131,7 +132,7 @@ expr0:
 | LBRACE p=separated_list(COMMA, product_pair) RBRACE {EProduct(loc $startpos $endpos, p);}
 | LET p=parameter EQ e0=expr SEMICOLON e1=expr {ELet(loc $startpos $endpos, fst p, ([], snd p), e0, e1)} (* TODO keep annotation if present *)
 | e=expr0 tag=PRODUCT_GET {EProductGet(loc $startpos $endpos, e, tag)}
-| e0=expr0 tag=PRODUCT_GET LEFT_ARROW e1=expr {EProductSet(loc $startpos $endpos, e0, tag, e1)}
+| e0=expr0 LEFT_ARROW tag=TAG COLON e1=expr {EProductSet(loc $startpos $endpos, e0, tag, e1)}
 | e=expr0 n=TUPLE_GET {ETupleGet(loc $startpos $endpos, e, n)}
 | STORE s=store_tag  {EProductGet(loc $startpos $endpos, EId(loc $startpos $endpos, "@"), s)}
 | STORE s=store_tag LEFT_ARROW e0=expr SEMICOLON e1=expr {EStoreSet(loc $startpos $endpos, s, e0, e1)}

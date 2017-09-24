@@ -287,7 +287,7 @@ tightly as unlabelled product accessors.
 
 Finally, one can generate a product from another: a product which is equal to
 `p` except that field `F` has value `42` can be created through the syntax
-`p.F<-42`.
+`p <- F: 42`.
 
 Example:
 
@@ -298,8 +298,8 @@ Example:
 
     let p_2_degrees_north = p.Latitude <- p.Latitude+2;
     let p_south_west =
-      (p.Latitude <- p.Latitude - 1)
-      .Longitude <- p.Longitude + 1;
+      p <- Latitude: p.Latitude - 1
+        <- Longitude: p.Longitude + 1;
 
     (p, p_2_degrees_north, p_south_west)
 
@@ -578,7 +578,6 @@ canbe used after.
     val list-map    :: ∀ a b: (a -> b) -> list a -> list b
     val list-reduce :: ∀ a acc: (a -> acc -> acc) -> list a -> acc -> acc
 
-    val map-empty  :: ∀ k v: map k v
     val map-get    :: ∀ k v: k -> map k v -> option v
     val map-map    :: ∀ k v0 v1: (k -> v0 -> v1) -> map k v0 -> map k v1
     val map-mem    :: ∀ k v: k -> map k v -> bool
@@ -592,7 +591,6 @@ canbe used after.
     val self-source         :: ∀ param result: contract param result
     val self-steps-to-quota :: nat
 
-    val set-empty  :: ∀ elt: set elt
     val set-map    :: ∀ a b: (a -> b) -> set a -> set b
     val set-mem    :: ∀ elt: set elt -> elt -> bool
     val set-reduce :: ∀ elt acc: (elt -> acc -> acc) -> set elt -> acc -> acc
