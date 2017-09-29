@@ -152,10 +152,13 @@ let ttuple ?(loc=noloc) list = match list with
 | list -> TTuple(loc, list)
 
 let tlambda ?(loc=noloc) ?(cmb=false) l =
-  match List.rev l with
+  match l with
   | [] | [_] -> raise (Invalid_argument "tlambda")
   | [prm; res] -> TLambda(loc, prm, res, cmb)
-  | res :: rev_prm -> TLambda(loc, ttuple(List.rev rev_prm), res, cmb) 
+  | _ -> 
+    let revl = List.rev l in
+    let last = List.hd revl and but_last = List.rev (List.tl revl) in 
+    TLambda(loc, ttuple(but_last), last, cmb) 
 
 let eid ?(loc=noloc) id = EId(loc, id)
 

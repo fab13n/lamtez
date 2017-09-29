@@ -1,0 +1,2 @@
+fun numbers :: list nat:
+  list-reduce numbers 0 (\x, max: if x>max: x | else: max end)

@@ -69,7 +69,7 @@ module Stk: sig
     let of_expr expr etype       = Anon, String_of_intermediate.string_of_untyped_expr expr, Some expr, etype
     let of_type hint etype       = Anon, hint, None, etype
     let of_var  name ?expr etype = Var, name, expr, etype
-    let string_of_item (_, s, _, _) = s
+    let string_of_item = function (Var, s, _, _) -> s | (Anon, s, _, _) -> "'"^s
     let type_of_item(_, _, _, t) = t
     let rec get_level stk name = match stk with
       | [] -> None
@@ -87,6 +87,10 @@ module Stk: sig
       | Some(Var, name, Some e, t) -> Some(e, t)
       | _ -> None
 end
+
+let get_litteral stk = function
+| I.EId name, _ -> Stk.typed_expr_of_var stk name
+| et -> Some et
 
 let rec compile_typed_expr (stk:Stk.t) ((ie, it): I.typed_expr) : (Stk.t * string) =
   if !_DEBUG_ then begin
@@ -250,15 +254,13 @@ and get_closure_env (stk: Stk.t) ?(except=[]) et =
  *)  
 and compile_ELambda_closure stk v_prm t_prm env res it =
 
-  print_endline("Entering cELc: "^sep_list ":" Stk.string_of_item stk);
-
   (* Generate the product holding the closure env. *)
   let e_prod = I.EProduct(List.map (fun (v,t) -> I.EId v, t) env) in
   let t_prod = I.TProduct(None, lazy (List.map snd env)) in
   let stk, c_env_make = compile_typed_expr stk (e_prod, t_prod) in
 
   (* Lambda active code *)
-  print_endline("Compile closure with env vars "^sep_list ", " fst env);
+  (* print_endline("Compile closure with env vars "^sep_list ", " fst env); *)
   let stk_l = List.map (fun (v, t) -> Stk.of_var v t) env in (* push env vars *)
   let stk_l = (Stk.of_var v_prm t_prm) :: stk_l in           (* push argument *)
   let stk_l, c_lambda = compile_typed_expr stk_l res in      (* Compile code  *)
@@ -280,8 +282,6 @@ and compile_ELambda_closure stk v_prm t_prm env res it =
   let code = sprintf 
     "%s # Closure env; \nLAMBDA %s %s { %s }; # Closure code\nPAIR; # Closure"
     c_env_make (compile_etype t_param_pair) (compile_etype (snd res)) c_body in
-
-    print_endline("Leaving cELc: List.tl "^sep_list ":" Stk.string_of_item stk);
 
   let stk = Stk.of_type "closure" it :: List.tl stk in
 
@@ -321,20 +321,20 @@ and compile_EApp_combinator stk f arg t_result =
   let stk, c_arg  = compile_typed_expr stk arg in
   (Stk.of_type "call" t_result) :: stk0, c_func^c_arg^"EXEC"
 
-and compile_list_rev_map stk param_id param_type body list =
-let a_type_name = compile_etype param_type in
-let b_type_name = compile_etype (snd body) in
+and compile_list_rev_map stk v_prm t_prm res list =
+let a_type_name = compile_etype t_prm in
+let b_type_name = compile_etype (snd res) in
 let stk_func_body, stk_list_a = 
-    let hd_a = Stk.of_var param_id param_type
-    and tl_a = Stk.of_type "tl_a" (I.TPrim("list", [param_type]))
-    and list_b = Stk.of_type "list_b" (I.TPrim("list", [snd body])) in      
+    let hd_a = Stk.of_var v_prm t_prm
+    and tl_a = Stk.of_type "tl_a" (I.TPrim("list", [t_prm]))
+    and list_b = Stk.of_type "list_b" (I.TPrim("list", [snd res])) in      
     hd_a :: tl_a :: list_b :: stk,
     list_b :: stk in
-  let _, code_body = compile_typed_expr stk_func_body body in
+  let _, code_body = compile_typed_expr stk_func_body res in
   let _, code_list_a = compile_typed_expr stk_list_a list in
-  let stk = Stk.of_type "list_b" (I.TPrim("list", [snd body])) :: List.tl stk in
+  let stk = Stk.of_type "list_b" (I.TPrim("list", [snd res])) :: List.tl stk in
   let code = 
-    "# reverse list map # list_a:...\n"^
+    sprintf "# <list-rev-map %s> # list_a:...\n" v_prm^
     sprintf "NIL %s; # list_b:...\n" b_type_name^
     code_list_a^
     "PUSH bool True; # True:list_a:list_b:...\n" ^
@@ -345,38 +345,44 @@ let stk_func_body, stk_list_a =
     "CONS; # list_b:tl_a:...\n"^
     "SWAP; # tl_a:list_b:...\n"^
     "PUSH bool True; # True:tl_a:list_b:...\n"^
-    sprintf "}\n{ NIL %s; PUSH bool False };\n}\nDROP; # Remove list_a" a_type_name in
+    sprintf "}\n{ NIL %s; PUSH bool False };\n}\nDROP; # Remove list_a\n" a_type_name^
+    "# </list-rev-map>\n" in
   stk, code
   
 and compile_rev_list stk elt_type =
   let elt_type = compile_etype elt_type in
-  "# Reverse list\n"^
+  "# <list-rev>\n"^
   sprintf "DIP{ NIL %s }; PUSH bool True;\n" elt_type^
   "LOOP { IF_CONS { SWAP; DIP{ CONS }; PUSH bool True;\n}\n"^
-  sprintf "{ NIL %s; PUSH bool False; }\n}\nDROP; # List reversed\n" elt_type
+  sprintf "{ NIL %s; PUSH bool False; }\n}\nDROP; # Remove nil\n" elt_type^
+  "# </list-rev>\n"
 
 and compile_list_map stk v_prm t_prm body list =
   let stk, code = compile_list_rev_map stk v_prm t_prm body list in
   stk, code^"\n"^compile_rev_list stk (snd body)
 
-
 and compile_list_reduce stk v_prm t_prm v_elt t_elt v_acc t_acc res acc0 list =
   let stk, acc0 = compile_typed_expr stk acc0 in
   let result_stk = stk in
+  let stk = Stk.of_var v_acc t_acc :: List.tl stk in
   let stk, code_list = compile_typed_expr stk list in
-  let stk, code_body = compile_typed_expr (Stk.of_type "hd" t_elt :: stk) res in
+  let stk, code_body = compile_typed_expr (Stk.of_var v_elt t_elt :: stk) res in
   let code = 
+    sprintf "# <list-reduce %s %s>\n" v_acc v_elt^
     acc0^
     code_list^
     "PUSH bool True # True:list:acc:...\n"^
-    "LOOP { #list:acc:...\n"^
+    "LOOP { # list:acc:...\n"^
     "IF_CONS { # hd:tl:acc:...\n"^
+    "# <reduce-function>\n"^
     code_body^ (* acc':hd:tl:acc:... *)
-    "DIP { DROP; DIP { DROP } } # acc:tl:...\n"^
-    "PUSH bool True; # True:acc:tl:...\n"^
+    "# </reduce-function>\n"^
+    "DIP { DROP; DIP { DROP } }; # acc:tl:...\n"^
+    "SWAP; # tl:acc:...\n"^
+    "PUSH bool True; # True:tl:acc:...\n"^
     "} { # acc:...\n"^
-    "DIP { NIL %s; PUSH bool False; } # False:acc:Nil:...\n"^
-    "} # acc:Nil:...\nDIP { DROP }; # Reduced => acc:...\n" in
+    sprintf "NIL %s; PUSH bool False; # False:tl=Nil:acc:...\n" (compile_etype t_elt)^
+    "} # tl:acc:... \n } # Nil:acc:...\nDROP; # Remove tl=Nil\n# </list-reduce>\n" in
     result_stk, code
 
 (* From a multi-parameter I.Elambda, retrieve the individual parameters
@@ -402,54 +408,44 @@ and extract_lambda_params v_prm t_prm res =
     | I.ELet(x, (I.EProductGet((I.EId v, _), i, n), _), body) when v=v_prm ->
       let lst, body, _ = f (fst body) in (i, x) :: lst, body, n
     | body -> [], body, 0 in
-  match f res with
-  | [], body, 0 ->
-    [v_prm, t_prm], body
-  | params, body, n ->
+  match f (fst res) with
+  | [], e_res, 0 -> [v_prm, t_prm], res
+  | params, e_res, n ->
     let types = match t_prm with
       | I.TProduct(_, lazy l) -> l 
       | _ -> unsound "multi-param lambda type" in
     let g i t = try List.assoc i params, t with Not_found -> Ast.fresh_var(), t in
     let params = List.mapi g types in
-    params, body
+    params, (e_res, snd res)
 
 and compile_EApp stk (e_f, t_f) (e_arg, t_arg as arg) t_result =
-  (* Try to retrieve lambda's litteral value *)
-  let litteral_lambda = match e_f with
-  | I.ELambda(v_prm, t_prm, env, res) -> Some(v_prm, t_prm, env, res)
-  | I.EId name -> begin match Stk.typed_expr_of_var stk name with
-    | Some(I.ELambda(v_prm, t_prm, env, res), _) -> Some(v_prm, t_prm, env, res)
-    | Some _ -> unsound "Applying a non-lambda"
-    | None -> None
-  end
-  | _ -> None in
-
   match e_f, t_f, e_arg with
 
   (* Convert litteral I.ELambda into I.ELet *)
   | I.ELambda(v_prm, t_prm, env, res), _, _ -> 
     let let_in_expr = I.ELet(v_prm, arg, res) in
-    print_endline("beta-reduce litteral lambda");
     compile_typed_expr stk (let_in_expr, snd res)
 
   | I.EId "contract-call", _, I.EProduct[contract; contract_arg; amount] -> 
       compile_contract_call stk contract contract_arg amount t_result
 
   | I.EId "list-map", _, I.EProduct[list; func] ->
-    begin match litteral_lambda with
-    | Some(v_prm, t_prm, _, res) -> compile_list_map stk v_prm t_prm res list
-    | None -> not_impl ""
+    begin match get_litteral stk func with
+    | Some(I.ELambda(v_prm, t_prm, _, res), _) -> compile_list_map stk v_prm t_prm res list
+    | Some _ -> unsound "list-mapping non-function"
+    | None -> not_impl "list-mapping arbitrary functions"
     end
 
   | I.EId "list-reduce", _, I.EProduct[list; acc0; func] ->
-    begin match litteral_lambda with
-    | Some(v_prm, t_prm, _, res) ->
-      begin match extract_lambda_params v_prm t_prm (fst res) with
-      | [v_elt, t_elt; v_acc, t_acc], f_body  ->
-         compile_list_reduce stk v_prm t_prm v_elt t_elt v_acc t_acc res acc0 list
+    begin match get_litteral stk func with
+    | Some(I.ELambda(v_prm, t_prm, _, res), _) ->
+      begin match extract_lambda_params v_prm t_prm res with
+      | [v_elt, t_elt; v_acc, t_acc], res ->
+        compile_list_reduce stk v_prm t_prm v_elt t_elt v_acc t_acc res acc0 list
       | _ -> unsound "reduce parameters"
-      end
-    | None -> not_impl "list-reduce of unknown function"
+      end;
+    | Some _ -> unsound "list-reducing non-function"
+    | None -> not_impl "list-reducing arbitrary function"
     end
 
   (* Unbound variables must be primitives. *)
@@ -467,8 +463,6 @@ and compile_EApp stk (e_f, t_f) (e_arg, t_arg as arg) t_result =
     (* Lambda closure => translate into a let-in *)
     | Some(I.ELambda(v_prm, t_prm, env, res), _) when env <> [] ->
       let let_in_expr = I.ELet(v_prm, arg, res) in
-      print_endline("beta-reduce closure");
-      print_endline(sep_list ":" Stk.string_of_item stk);
       compile_typed_expr stk (let_in_expr, snd res)    
 
     | Some _ -> unsound "Closure type"

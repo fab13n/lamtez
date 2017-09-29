@@ -114,7 +114,7 @@ data_parameter: d=data EOF {d}
 expr0:
 | c=atomic_constant {ELit(loc $startpos $endpos, c)}
 | s=ID {EId(loc $startpos $endpos, s)}
-| LAMBDA p=separated_nonempty_list(COMMA, parameter) COLON res=expr_sequence opt_type_annot {
+| LAMBDA p=separated_nonempty_list(COMMA, parameter) opt_type_annot COLON res=expr_sequence {
     let loc = loc $startpos $endpos in 
     let p_prm, t_prm = match p with 
       | [] -> assert false

@@ -125,7 +125,7 @@ and compile_product_pattern ctx plist t =
 let rec compile_expr ctx e =
   let c = compile_expr ctx in
   let e_type = Ctx.retrieve_type ctx e in
-  (* print_endline("exprT->iExpr: "^P.string_of_expr e^"; typeT: "^P.string_of_type e_type);   *)
+  (* print_endline("exprT->iExpr: "^P.string_of_expr e^"; typeT: "^P.string_of_type e_type); *)
   let it = compile_etype ctx e_type in
 
   match e with
@@ -155,7 +155,7 @@ let rec compile_expr ctx e =
     | A.PAny ->  I.ELambda(A.fresh_var ~prefix:"_" (), it_prm, env, i_res), it
     | A.PTuple _ | A.PProduct _ -> 
       let id, f = compile_pattern ctx p_prm it_prm in
-      I.ELambda(id, it_prm, env, i_res), it
+      I.ELambda(id, it_prm, env, f i_res), it
     end
     (* I.ELambda(p_prm, t_prm, v_env, c res), it *)
 

@@ -204,6 +204,7 @@ let rec unify ctx t0 t1 =
   (* TODO: add awareness of nat <: int *)
   let t0 = expand_type ctx t0 in
   let t1 = expand_type ctx t1 in
+  (* print_endline("<"^String_of_ast.string_of_type t0^" U "^String_of_ast.string_of_type t1^">"); *)
   match t0, t1 with
   | A.TFail, t | t, A.TFail -> ctx, t
   | A.TId(_, id0), A.TId(_, id1) ->
@@ -216,10 +217,10 @@ let rec unify ctx t0 t1 =
   if !_DEBUG_ then print_endline ("Constraint: var "^id^" => type "^P.string_of_type t);
       add_alias id ([], t) ctx, t
   (* TODO closure/combinator unification? would require a more careful ordering. *)
-  | A.TLambda(_, t00, t01, cmb0), A.TLambda(_, t10, t11, cmb1) when cmb0=cmb1 ->
+  | A.TLambda(_, t00, t01, cmb0), A.TLambda(_, t10, t11, cmb1) ->
     let ctx, t0 = unify ctx t00 t10 in
     let ctx, t1 = unify ctx t01 t11 in
-    ctx, A.TLambda(A.noloc, t0, t1, cmb0)
+    ctx, A.TLambda(A.noloc, t0, t1, cmb0 && cmb1)
   (* | A.TApp(_, "nat", []), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TApp(_, "nat", []) ->
     ctx, A.TApp(A.noloc, "nat", []) *)
   | A.TApp(_, name0, args0), A.TApp(_, name1, args1)
