@@ -70,10 +70,13 @@ features:
   else's contracts dreadful. Being able to name things rather than shuffling
   them on a stack greatly improves contract readability.
 
-* Limited support for closures: a function can use variables declared outside
-  of it. This feature is however currently limited, as it is tedious to
-  abstract away the types of the variables captured by closures (this might
-  change if closures prove to be very useful in typical smart contracts).
+* Limited support for closures: a function can use variables declared
+  outside of it. It is done by either compiling functions as a pair of
+  a `LAMBDA` with a tuple capturing its environment from the stack,
+  by beta-reducing the closures when possible, or by reimplementing
+  `MAP` and `REDUCE` operations with `LOOP` when the function needs
+  its environment. Some cases remain, though, where Lamtez is not able
+  to compile a closure.
 
 * type inference: as most ML dialects, lamtez uses a variant of the W
   algorithm to guess types with very little user annotations. However,
@@ -149,34 +152,44 @@ A contract is composed of:
 
 ### Functions and function applications
 
-In languages inspired by lambda calculus, functions are introduced
-with the `fun` keyword.
+In languages inspired by lambda calculus, functions are introduced by
+a $\lambda$ sign; In Lamtez as in ML we represent it with the `fun`
+keyword; we tolerate also the backslash `\\`, visually more similar,
+used by Haskell, more concise, but which might make the code look more
+cryptic at first sight.
 
 The complete syntax for a function is `fun x: body`. Parameters can be
 annotated with types, through the `::` infix operator: `fun x :: nat:
 body`. The result type can also be specified, although it can normally
 be inferred by the compiler: `fun x :: nat :: unit: body`.
 
-Lamtez supports multi argument functions, through currying (nested functions
-returning functions, a standard idiom in λ-calcullus inspired languages) (NOT
-YET IMPLEMENTED for user-defined functions; pass products instead, for now).
+Lamtez supports multi argument functions, but contrary to ML-inspired
+languages, they are encoded through tuples rather than through
+currying (nested functions returning functions, a standard idiom in
+λ-calcullus inspired languages). Currying is mainly useful for partial
+applications, and their usefulness is not demonstrated for Tezos smart
+contracts. They can always be encoded through eta-expansion if needed.
+Finally, currying leads to cumbersome code at best, in a target
+language that doesn't support closures.
 
-Functions are applied the ML/λ-calculus way, by putting the arguments after
-the function, without parentheses nor separating commas, i.e. what's written
-`f(x, y)` in C-inspired syntaxes is written `f x y`. Application is
-left-associative, i.e. `f x y z` is read as `(((f x) y) z)`. Parentheses are
-still needed for nested function applications, e.g `f(g(x), g(y))` in C would
-give `f (g x) (g y)`.
+Functions are syntactically applied the ML/λ-calculus way, by putting
+the arguments after the function, without parentheses nor separating
+commas, i.e. what's written `f(x, y)` in C-inspired syntaxes is
+written `f x y`, and equivalent to `f(x, y)`, the application of
+function `f` to the pair `(x, y)`. Parentheses are still needed for
+nested function applications, e.g. what would be written `f(g(x),
+g(y))` in C would give `f (g x) (g y)` in Lamtez, as in most ML
+dialects.
 
-Lamtez performs type inference, i.e. if there are enough hints in the code, it
-will correctly guess the types which the user omitted to write. However,
-unlike most other ML-family languages, polymorphism is not allowed, because
-the underlying Michelson VM doesn't support it (TODO: inner lambdas could be
-polymorphic, as long as it doesn't show on the outside type. Not sure hwo
-useful that would be in practice). So if the type inference algorithm
-determines that a function's best type is, say, `∀a: list a -> nat`, the
-compiler will emit an error and demand more type annotations rather than
-accepting
+Lamtez performs type inference, i.e. if there are enough hints in the
+code, it will correctly guess the types which the user omitted to
+write. However, unlike most other ML-family languages, polymorphism is
+not allowed, because the underlying Michelson VM doesn't support it
+(TODO: inner lambdas could be polymorphic, as long as it doesn't show
+on the outside type. Not sure hwo useful that would be in
+practice). So if the type inference algorithm determines that a
+function's best type is, say, `∀a: list a -> nat`, the compiler will
+emit an error and demand more type annotations rather than accepting
 
 Examples:
 
@@ -432,6 +445,8 @@ perform them before in a `let` expression.
 
 ### Loops
 
+(NOT IMPLEMENTED)
+
 Loops are not very functional; however, in a languge that doesn't
 fully support closures and doesn't support contract calls from inside
 lambdas, access to the `LOOP` Michelson primitive is
@@ -447,19 +462,10 @@ introduce a syntax of the form `loop (<var*>) = (<expr*>) while
     * the result is assigned to `<var*>`, before a new condition checking,
       and maybe iteration, is performed.
 
-This feature would be much more practical to use with _irrefutable
-patterns_, i.e. expressions of the form `let x, y = p; e(x, y)` as
-shortcuts for `let x=p.0; let y=p.1; e(x, y)`. Tuples and products can
-be destructured this way; sum types should not, as in most situations
-there are several possible cases to take into account. This would make
-the contract fail if the proper sum case isn't present, and we want
-possible causes of failure to be highly visible. Hence there will
-probably never be any support for syntaxes like `let Some x = expr0;
-expr1`.
-
 As an example, here's what factorial would look like with the loop operator:
 
-    fun n: let (fact, _) = loop (acc, i) = (acc*i, i-1) while i > 0 else (1, n)
+    let fact = fun n:
+      let loop (acc, i) = (1, n) then (acc*i, i-1) while i > 0
 
 Some syntactic permissiveness might be granted for the order in which `loop`,
 `while` and `else` elements are ordered:
@@ -575,13 +581,13 @@ canbe used after.
 
     val fail :: fail
 
-    val list-map    :: ∀ a b: (a -> b) -> list a -> list b
-    val list-reduce :: ∀ a acc: (a -> acc -> acc) -> list a -> acc -> acc
+    val list-map    :: ∀ a b: list a -> (a -> b) -> list b
+    val list-reduce :: ∀ a acc: list a -> acc -> (a -> acc -> acc) -> acc
 
     val map-get    :: ∀ k v: k -> map k v -> option v
-    val map-map    :: ∀ k v0 v1: (k -> v0 -> v1) -> map k v0 -> map k v1
+    val map-map    :: ∀ k v0 v1: map k v0 -> (k -> v0 -> v1) -> map k v1
     val map-mem    :: ∀ k v: k -> map k v -> bool
-    val map-reduce :: ∀ k v acc: (k -> v -> acc -> acc) -> map k v -> acc -> acc
+    val map-reduce :: ∀ k v acc: map k v -> acc -> (k -> v -> acc -> acc) -> acc
     val map-update :: ∀ k v: k -> option v -> map k v -> map k v
 
     val self-amount         :: tez
@@ -591,7 +597,7 @@ canbe used after.
     val self-source         :: ∀ param result: contract param result
     val self-steps-to-quota :: nat
 
-    val set-map    :: ∀ a b: (a -> b) -> set a -> set b
+    val set-map    :: ∀ a b: set a -> (a -> b) -> set b
     val set-mem    :: ∀ elt: set elt -> elt -> bool
-    val set-reduce :: ∀ elt acc: (elt -> acc -> acc) -> set elt -> acc -> acc
+    val set-reduce :: ∀ elt acc: set elt -> acc -> (elt -> acc -> acc) -> acc
     val set-update :: ∀ elt: elt -> bool -> set elt

@@ -62,9 +62,9 @@ of type \verb|unit|.
 
 The following sym types are built-in:
 \begin{Verbatim}
-type option t =  None | Some t
-type bool     = False | True
-type list a   =   Nil | Cons (a * list a)
+type option t =  None + Some t
+type bool     = False + True
+type list a   =   Nil + Cons (a * list a)
 \end{Verbatim}
 
 \subsection{Labelled product types}
@@ -161,9 +161,12 @@ fun (<pattern>(::<type_param>)?)+ (::<type_result>)?:
    <expr>
 \end{Verbatim}
 
-As in ML, arguments are separated by spaces without mandatory
-parentheses around them.  Function application binds tighter than
-binary and unary operators (e.g. \verb|a b + c d| parses as
+As in ML, arguments are syntactically separated by spaces without
+mandatory parentheses around them. Unlike ML, multi-parameter
+functions are encoded with tuples rather than in Curry style,
+i.e. \verb|f x y z| is syntax sugar for \verb|f (x, y, z)| not
+\verb|(((f x) y) z)|. Function application binds tighter than binary
+and unary operators (e.g. \verb|a b + c d| parses as
 \verb|a(b) + c(d)|), but looser than product field accessors.
 
 \begin{Verbatim}
@@ -240,7 +243,10 @@ end
 
 The code \verb|<expr_if_true_i>| corresponding to the first true
 \verb|<expr_cond_i>| is evaluated. \verb|else| clause may be
-ommitted if the result type is \verb|unit|.
+ommitted if the result type is \verb|unit|. The first bar after the
+\verb|if| is optional.
+
+\vfill\null\columnbreak
 
 \subsection{Field access}
 \begin{Verbatim}[frame=single]
@@ -281,8 +287,6 @@ let x = not @field;            # store access
 Michelson doesn't support polymorphic types. To prevent Lamtez from guessing
 such types, as well as to improve contract readbility, you might have to add
 type annotations.
-
-\vfill\null\columnbreak
 
 \subsection{Operations}
 \subsubsection{Binary infix operators}
