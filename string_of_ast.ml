@@ -9,11 +9,8 @@ let rec string_of_type t =
   match t with
   | TId(_, s) -> s
   | TFail -> "fail"
-  | TLambda _ as t ->
-      let rec f = function 
-        | TLambda(_, a, b) -> sprintf "%s -> %s" (sot a) (f b)
-        | t -> sot t in
-      "("^f t^")"
+  | TLambda(_, prm, res, true) -> sprintf "%s -> %s" (sot prm) (sot res)
+  | TLambda(_, prm, res, false) -> sprintf "%s => %s" (sot prm) (sot res)
   | TTuple(_, []) -> "unit"
   | TTuple(_, list) -> "("^sep_list " * " sot list^")"    
   | TApp(_, name, []) -> "'"^name
@@ -71,26 +68,22 @@ let rec string_of_pattern = function
 let rec string_of_expr =
   let soe = string_of_expr 
   and sot = string_of_type
-  and sos = string_of_scheme in
+  and sos = string_of_scheme
+  and sop = string_of_pattern in
   function
   | ELit(_, c) -> string_of_lit c
   | EColl(_, kind, list) ->
     "("^string_of_collection_kind kind^" "^sep_list " " soe list^")"
   | EId(_, s) -> s
-  | ELambda(_, _, _, _, tr) as e ->
-    let type_annot = if is_fresh_tvar tr then "" else " :: "^sot tr in
-    let rec f = function
-      | ELambda(_, p, tp, e, te) ->
-        let p = if is_fresh_tvar tp then (string_of_pattern p) 
-          else string_of_pattern p^" :: "^sot tp in
-        p^" "^f e
-      | e -> type_annot^": "^soe e in
-    "(λ"^f e^")"
+  (* TODO Special case for ELambda(...ETypeAnnot) and ELambda(_, ETuple, ...) *)
+  | ELambda(_, p_prm, t_prm, e_res) -> 
+    let p_annot = if is_fresh_tvar t_prm then "" else " :: "^sot t_prm in
+    sprintf "(λ%s%s: %s)" (sop p_prm) p_annot (soe e_res)
   | ELet(_, p, t, e0, e1) ->
     if is_fresh_tvar (snd t)
     then "let "^string_of_pattern p^" = "^soe e0^"; "^soe e1
     else "let "^string_of_pattern p^" :: "^sos t^" = "^soe e0^"; "^soe e1
-  | EApp _ as e -> let rec f = function EApp(_, a, b) -> f a^" "^soe b | e -> soe e in "("^f e^")"
+  | EApp(_, f, arg)  -> "("^soe f^" "^soe arg^")"
   | ETuple(_, list) -> "(" ^ sep_list ", " soe list ^ ")"
   | ESequence(_, list) -> "(" ^ sep_list "; " soe list ^ ")"
   | ETupleGet(_, e0, tag) -> soe e0 ^"."^string_of_int tag

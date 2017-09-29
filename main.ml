@@ -124,15 +124,13 @@ let parse_file a =
   let (ast_type_decl, ast_store_decl, ast_code) as ast = 
     try Parser.contract Lexer.read a.in_ltz with 
     | Lexer.Lexing_error p ->
-      let msg = Printf.sprintf "File \"%s\", line %d, character %d: Lexing error"
-        p.Lexing.pos_fname p.Lexing.pos_lnum p.Lexing.pos_cnum in
+      let msg = Printf.sprintf "%s: Lexing error" (Ast.string_of_loc (Some(p, p))) in
       print_endline msg;
       raise Exit
     | Parser.Error -> 
       let p = Lexing.lexeme_start_p a.in_ltz in
-      let p = Printf.sprintf "File \"%s\", line %d, character %d: Lexing error"
-        p.Lexing.pos_fname p.Lexing.pos_lnum p.Lexing.pos_cnum in
-      print_endline("parsing: error at "^p);
+      let msg = Printf.sprintf "%s: Lexing error" (Ast.string_of_loc (Some(p, p))) in
+      print_endline(msg);
       raise Exit
     | Not_impl msg ->
       print_endline ("\nNot implemented: "^msg);

@@ -1,2 +1,0 @@
-(c) Fabien Fleutot 2017
-This source code is release under the MIT public license

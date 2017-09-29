@@ -7,7 +7,7 @@ let noloc = None
 
 type etype =
   | TId     of loc * tvar
-  | TLambda of loc * etype * etype
+  | TLambda of loc * etype * etype * bool (* prm, res * is_combinator *)
   | TTuple  of loc * etype list (* TODO encode as TApp("tuple-N", list)? *)
   | TApp    of loc * tvar * etype list
   | TFail
@@ -45,13 +45,13 @@ type pattern =
   | PProduct of (tag*pattern) list 
 
 type expr =
-  | ELit    of loc * literal
-  | EColl   of loc * collection_kind * expr list
-  | EId     of loc * evar
-  | ELambda of loc * pattern * etype * expr * etype
-  | ELet    of loc * pattern * scheme * expr * expr
+  | ELit      of loc * literal
+  | EColl     of loc * collection_kind * expr list
+  | EId       of loc * evar
+  | ELambda   of loc * pattern * etype * expr (* loc, p_prm,  t_prm, e_result *)
+  | ELet      of loc * pattern * scheme * expr * expr
   | ESequence of loc * expr list
-  | EApp    of loc * expr * expr
+  | EApp      of loc * expr * expr
 
   | ETuple    of loc * expr list
   | ETupleGet of loc * expr * int
@@ -76,22 +76,34 @@ let string_of_loc: loc -> string = function
   | Some((p1, p2)) ->
     let open Printf in
     let open Lexing in
-    if p1.pos_lnum=p2.pos_lnum then 
-      sprintf "File \"%s\", line %d, characters %d-%d" 
-              p1.pos_fname p1.pos_lnum p1.pos_cnum p2.pos_cnum
+    if p1.pos_cnum = p2.pos_cnum then
+      sprintf "File \"%s\", line %d, character %d (offset %d)" 
+        p1.Lexing.pos_fname p1.Lexing.pos_lnum
+        (p1.Lexing.pos_cnum-p1.Lexing.pos_bol) 
+        p1.Lexing.pos_cnum
+    else if p1.pos_lnum=p2.pos_lnum then 
+      sprintf "File \"%s\", line %d, characters %d-%d (offset %d)" 
+        p1.Lexing.pos_fname p1.Lexing.pos_lnum
+        (p1.Lexing.pos_cnum-p1.Lexing.pos_bol) 
+        (p2.Lexing.pos_cnum-p2.Lexing.pos_bol) 
+        p1.Lexing.pos_cnum
     else
-      sprintf "File \"%s\", line %d-%d, characters %d-%d" 
-              p1.pos_fname p1.pos_lnum p2.pos_lnum p1.pos_cnum p2.pos_cnum
+      sprintf "File \"%s\", line %d-%d, characters %d-%d (offset %d)" 
+      p1.Lexing.pos_fname 
+      p1.Lexing.pos_lnum p2.Lexing.pos_lnum
+      (p1.Lexing.pos_cnum-p1.Lexing.pos_bol) 
+      (p2.Lexing.pos_cnum-p2.Lexing.pos_bol) 
+      p1.Lexing.pos_cnum
 
 let loc_of_expr = function
-| ELit(loc, _) | EColl(loc, _, _)| EId(loc, _) | ELambda(loc, _, _, _, _) | ELet(loc, _, _, _, _)
+| ELit(loc, _) | EColl(loc, _, _)| EId(loc, _) | ELambda(loc, _, _, _) | ELet(loc, _, _, _, _)
 | EApp(loc, _, _) | ETuple(loc, _) | ETupleGet(loc, _, _) | EProduct(loc, _)
 | EProductGet(loc, _, _) | EProductSet(loc, _, _, _) | EStoreSet(loc, _, _, _)
 | ESum(loc, _, _) | ESumCase(loc, _, _) | EBinOp(loc, _, _, _) | EUnOp(loc, _, _)
 | ETypeAnnot(loc, _, _) | ESequence(loc, _) -> loc
 
 let loc_of_etype = function
-| TId(loc, _) | TLambda(loc, _, _) | TTuple(loc, _) | TApp(loc, _, _) -> loc
+| TId(loc, _) | TLambda(loc, _, _, _) | TTuple(loc, _) | TApp(loc, _, _) -> loc
 | TFail -> noloc
 
 let loc_of_decl = function
@@ -114,10 +126,13 @@ let loc2 a b = match a, b with
   | None, None -> None
 let loc2e a b = loc2 (loc_of_expr a) (loc_of_expr b)
 
-let rec tlambda ?(loc=noloc) l = match l with
-  | [] -> raise (Invalid_argument "tlambda")
-  | [t] -> t 
-  | t :: ts' -> TLambda(loc, t, tlambda ts')
+let loc_of_elist = function
+  | [] -> None
+  | list ->
+    let first = List.hd list in
+    let rec last = function [a] -> a | _::b -> last b | [] -> assert false in
+    let last = last list in
+    loc2e first last
 
 let tapp ?(loc=noloc) name args = TApp(noloc, name, args)
 
@@ -136,6 +151,12 @@ let ttuple ?(loc=noloc) list = match list with
 | [t] -> t
 | list -> TTuple(loc, list)
 
+let tlambda ?(loc=noloc) ?(cmb=false) l =
+  match List.rev l with
+  | [] | [_] -> raise (Invalid_argument "tlambda")
+  | [prm; res] -> TLambda(loc, prm, res, cmb)
+  | res :: rev_prm -> TLambda(loc, ttuple(List.rev rev_prm), res, cmb) 
+
 let eid ?(loc=noloc) id = EId(loc, id)
 
 let eunit_loc ~loc = ETuple(loc, [])
@@ -145,7 +166,9 @@ let eunit = eunit_loc noloc
 let etuple ?(loc=noloc) list = match list with
   | [] -> eunit_loc ~loc
   | [e] -> e
-  | list -> ETuple(loc, list) 
+  | list ->
+    let loc = if loc=None then loc_of_elist list else loc in 
+    ETuple(loc, list) 
 
 let esum ?(loc=noloc) id args = 
   let arg = match args with
@@ -156,12 +179,11 @@ let esum ?(loc=noloc) id args =
     etuple ~loc list in
   ESum(loc, id, arg) 
 
-let eapp = function [] -> assert false | f :: args ->
-  let l1 = loc_of_expr f in
-  let fold acc arg =
-    let loc = loc2 l1 (loc_of_expr arg) in
-    EApp(loc, acc, arg) in
-  List.fold_left fold f args
+let eapp = function
+  | [] -> assert false
+  | [x] -> x
+  | [f; arg] -> EApp(loc2e f arg, f, arg)
+  | f :: args -> let arg = etuple args in EApp(loc2e f arg, f, arg) 
 
 let esequence ?(loc=noloc) l = ESequence(loc, l)
 
@@ -201,7 +223,7 @@ let get_free_tvars ?except t =
   let rec f = function
     | TFail -> S.empty
     | TId(_, id) -> S.singleton id
-    | TLambda(_, e0, e1) -> f e0 + f e1
+    | TLambda(_, arg, result, _) -> f arg + f result
     | TTuple(_, list) 
     | TApp(_, _, list) -> 
       List.fold_left S.union S.empty (List.map f list) in
@@ -218,14 +240,24 @@ let rec pattern_binds_set = function
 
 let pattern_binds_list p = S.elements @@ pattern_binds_set p
 
+module M = Map.Make(String)
+
+(* Return a map from free variable names to every occurence of it in e *)
 let get_free_evars ?except e =
-  let rec f = function
-    | EId(_, id) -> S.singleton id
-    | ELit _ -> S.empty
-    | ELambda(_, p, _, e, _) -> f e -- pattern_binds_set p
+    let merge k a b = match a, b with
+      | Some a, Some b -> Some(a@b)
+      | Some a, None | None, Some a -> Some a
+      | None, None -> assert false 
+    in
+    let (+) = M.merge merge (* TODO there's a Map.union function, should use it. *)
+    and (--) m s = S.fold M.remove s m in
+    let rec f = function
+    | EId(_, id) as e -> M.singleton id [e]
+    | ELit _ -> M.empty
+    | ELambda(_, pattern, _, e) -> f e -- pattern_binds_set pattern
     | ELet(_, p, _, e0, e1) -> f e0 + (f e1 -- pattern_binds_set p)
     | EColl(_, _, list) | ESequence(_, list) | ETuple(_, list) ->
-      List.fold_left (+) S.empty (List.map f list) 
+      List.fold_left (+) M.empty (List.map f list) 
     | EApp(_, e0, e1) | EProductSet(_, e0, _, e1)
     | EStoreSet(_, _, e0, e1) | EBinOp(_, e0, _, e1) -> 
       f e0 + f e1
@@ -233,15 +265,17 @@ let get_free_evars ?except e =
     | ESum(_, _, e) | EUnOp(_, _, e)
     | ETypeAnnot(_, e, _) -> f e
     | EProduct(_, list) ->
-      List.fold_left (fun acc (_, e) -> acc + f e) S.empty list
+      List.fold_left (fun acc (_, e) -> acc + f e) M.empty list
     | ESumCase(_, e, list) ->
       let fold acc (_, (p, e)) = acc + (f e -- pattern_binds_set p) in
-      List.fold_left fold S.empty list
+      List.fold_left fold (f e) list
   in
-  let set = match except with
+  match except with
     | None -> f e
     | Some exceptions -> f e -- S.of_list exceptions
-  in List.sort compare @@ S.elements set
+
+let elambda ?(loc=noloc) p_prm t_prm e_res =
+  ELambda(loc, p_prm, t_prm, e_res)
 
 let rec replace_evar var e e' =
   let r = replace_evar var e in
@@ -249,8 +283,8 @@ let rec replace_evar var e e' =
   | EId(_, var') when var'=var -> e
   | ELit _ | EId _ -> e'
   | EColl(loc, kind, list) -> EColl(loc, kind, List.map r list)
-  | ELambda(_, p, _, _, _) when pattern_binds_set p << var -> e'
-  | ELambda(loc, p, t, e0, t0) -> ELambda(loc, p, t, r e0, t0)
+  | ELambda(_, p, _, _) when pattern_binds_set p << var -> e'
+  | ELambda(loc, prm, t_prm, e_res) -> ELambda(loc, prm, t_prm, r e_res)
   | ELet(loc, p, t, e0, e1) when pattern_binds_set p << var -> ELet(loc, p, t, r e0, e1)
   | ELet(loc, p, t, e0, e1) -> ELet(loc, p, t, r e0, r e1)
   | EApp(loc, e0, e1) -> EApp(loc, r e0, r e1)
@@ -274,7 +308,7 @@ let rec replace_tvar var t term =
   match term with
   | TId(_, var') when var'=var -> t
   | TId _ | TFail -> term
-  | TLambda(loc, t0, t1) -> TLambda(loc, r t0, r t1)
+  | TLambda(loc, arg, res, cmb) -> TLambda(loc, r arg, r res, cmb)
   | TApp(loc, name, type_args) -> TApp(loc, name, List.map r type_args)
   | TTuple(loc, list) -> TTuple(loc, List.map r list)
 

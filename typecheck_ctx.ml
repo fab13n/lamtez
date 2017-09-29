@@ -163,14 +163,14 @@ let rec expand_type ctx t =
   let r = expand_type ctx in
   match t with
   | A.TFail -> t
-  | A.TLambda(_, t0, t1) -> A.TLambda(A.noloc, r t0, r t1)
+  | A.TLambda(_, t0, t1, cmb) -> A.TLambda(A.noloc, r t0, r t1, cmb)
   | A.TApp(_, name, args) -> A.TApp(A.noloc, name, List.map r args)
   | A.TTuple(_, types) -> A.TTuple(A.noloc, List.map r types)
   | A.TId(_, id) -> (try r (instantiate_scheme (StringMap.find id ctx.aliases)) with Not_found -> t)
 
 and expand_scheme ctx (v, t) =
-  failwith "Check expand_scheme!";
-  [], expand_type ctx t
+  failwith "Check expand_scheme!"
+  (* [], expand_type ctx t *)
 
 and scheme_of_evar ctx name =
   try StringMap.find name ctx.evars
@@ -215,10 +215,11 @@ let rec unify ctx t0 t1 =
   | A.TId(_, id), t | t, A.TId(_, id) ->
   if !_DEBUG_ then print_endline ("Constraint: var "^id^" => type "^P.string_of_type t);
       add_alias id ([], t) ctx, t
-  | A.TLambda(_, t00, t01), A.TLambda(_, t10, t11) ->
+  (* TODO closure/combinator unification? would require a more careful ordering. *)
+  | A.TLambda(_, t00, t01, cmb0), A.TLambda(_, t10, t11, cmb1) when cmb0=cmb1 ->
     let ctx, t0 = unify ctx t00 t10 in
     let ctx, t1 = unify ctx t01 t11 in
-    ctx, A.TLambda(A.noloc, t0, t1)
+    ctx, A.TLambda(A.noloc, t0, t1, cmb0)
   (* | A.TApp(_, "nat", []), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TApp(_, "nat", []) ->
     ctx, A.TApp(A.noloc, "nat", []) *)
   | A.TApp(_, name0, args0), A.TApp(_, name1, args1)

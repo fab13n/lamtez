@@ -38,8 +38,9 @@ let sig = "sig:" hex+
 let key = "tz1" b58+
 
 rule read = parse
-| white {read lexbuf}
-| '#' [^'\r' '\n']* ['\r' '\n'] {read lexbuf}
+| [' ' '\t']+ {read lexbuf}
+| '\r' '\n'? | '\n' '\r' ? {Lexing.new_line lexbuf; read lexbuf}
+| '#' [^'\r' '\n']* ['\r' '\n'] {Lexing.new_line lexbuf; read lexbuf}
 | "type" {TYPE}
 | "let" {LET}
 | "if" {IF}
@@ -65,7 +66,7 @@ rule read = parse
 
 | '(' {LPAREN} | ')' {RPAREN} 
 | '\\' {LAMBDA} | "fun" {LAMBDA}
-| "->" {ARROW}
+| "->" {ARROW} | "=>" {DOUBLE_ARROW}
 | ',' {COMMA} | ':' {COLON} | '{' {LBRACE} | '}' {RBRACE} | '|' {BAR}
 | '=' {EQ} | "!=" {NEQ} | '<' {LT} | "<=" {LE} | '>' {GT} | ">=" {GE} | '^' {CONCAT}
 | '+' {PLUS} | '-' {MINUS} | '*' {STAR} | '/' {DIV} | ">>" {LSR} | "<<" {LSL}

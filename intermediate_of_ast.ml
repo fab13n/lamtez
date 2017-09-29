@@ -25,27 +25,14 @@ let prim_translations = [
 
 let rec compile_etype ctx t =
   let c = compile_etype ctx in
-  let split_function_args t =
-    let rec rev_split_args = function 
-    | A.TLambda(_, arg, result)
-    | A.TApp(_, "result", [_; arg; result]) ->
-      let args, result = rev_split_args result in arg::args, result
-    | t -> [], t in
-    let rev_args, result = rev_split_args t in
-    List.rev rev_args, result in
-
   match t with
   | A.TId(_, id) ->
     begin match Ctx.expand_type ctx t with (* TODO the re-expansion shouldn't be necessary here *)
     | A.TId(_, id) -> failwith ("unresolved type variable "^id)
     | t -> c t
     end
-  | A.TLambda _ ->
-    let args, result = split_function_args t in
-    I.TLambda(List.map c args, c result)
-  | A.TApp(_, "closure", _) as t ->
-    let args, result = split_function_args t in
-    I.TPrim("closure", c result :: List.map c args)
+  | A.TLambda(_, prm, res, cmb) ->
+    I.TLambda(c prm, c res, cmb)
   | A.TTuple(_, list) -> I.TProduct(None, lazy(List.map c list))
   | A.TApp(_, name, args) -> begin match Ctx.decl_of_name ctx name with
     | A.DProduct(_, name, params, fields) ->
@@ -89,7 +76,10 @@ let get_sum_decl_cases ctx (t:A.etype) =
 (* Compiles the bindings described by `pattern`.
  * The result is a function which transforms a term, using the variables bound
  * by `pattern`, into a variable name, and a term which depends only on that
- * term ()
+ * term ().
+ *
+ * example: p = «(a, b, _)», t = «(ta * tb * tc)» will return
+ * `"%1", fun («f[a,b]», t) -> («let a=%1.<0|3>; let b=%1.<1|3>; f[a,b]», t)`
  *)
 let rec compile_pattern ctx (p: A.pattern) (t: I.etype): string * (I.typed_expr->I.typed_expr) =
   match p with
@@ -152,21 +142,25 @@ let rec compile_expr ctx e =
   | A.EColl(_, k, list) -> I.EColl(k, List.map c list), it
   | A.EId(_, id) -> I.EId id, it
 
-  | A.ELambda _ as e ->
-    (* Get nested param vars and types *)
-    let rec split_param_names = function
-      | A.ELambda(_, A.PId var, _, e_body, t_body) ->
-        let vars, body = split_param_names e_body in
-        var :: vars, e_body
-      | non_lambda_expr -> [], non_lambda_expr in
-    let rev_param_names, body_expr = split_param_names e in
-    let param_types = match it with
-      | I.TLambda(p, _) | I.TPrim("closure", _ ::p) -> p | _ -> unsound "lambda" in
-    let typed_names = List.map2 (fun n t -> n, t) (List.rev rev_param_names) param_types in
-    I.ELambda(typed_names, c body_expr), it
+  | A.ELambda(_, p_prm, t_prm, e_res) ->
+    let env_occurences = A.get_free_evars ~except:(A.pattern_binds_list p_prm) e_res in
+    let fold name occ list =
+      let a_type = Ctx.retrieve_type ctx (List.hd occ) in
+      (name, compile_etype ctx a_type) ::list in
+    let env = Ast.M.fold fold env_occurences [] in
+    let i_res = c e_res in
+    let it_prm = compile_etype ctx t_prm in
+    begin match p_prm with
+    | A.PId id -> I.ELambda(id, it_prm, env, i_res), it
+    | A.PAny ->  I.ELambda(A.fresh_var ~prefix:"_" (), it_prm, env, i_res), it
+    | A.PTuple _ | A.PProduct _ -> 
+      let id, f = compile_pattern ctx p_prm it_prm in
+      I.ELambda(id, it_prm, env, i_res), it
+    end
+    (* I.ELambda(p_prm, t_prm, v_env, c res), it *)
 
   | A.ELet(_, p, ps, e0, e1) ->
-    assert (fst ps = []);
+    assert (fst ps = []); (* TODO proper error here or in typcheck? *)
     let te0 = c e0 and (ie1, it1) as te1 = c e1 in
     begin match p with
     | A.PId id -> I.ELet(id, te0, te1), it1
@@ -181,10 +175,7 @@ let rec compile_expr ctx e =
     let rev_list = List.rev list in
     List.fold_left fold (c (List.hd rev_list)) (List.tl rev_list)
 
-  | A.EApp _ as e ->
-    let rec get = function A.EApp(_, f, a) -> let f', args = get f in f', a::args | e -> e, [] in
-    let f, rev_args = get e in
-    I.EApp(c f, List.rev_map c rev_args), it
+  | A.EApp(_, e0, e1) -> I.EApp(c e0, c e1), it
 
   | A.ETuple(_, list) -> I.EProduct(List.map c list), it
 
@@ -237,14 +228,14 @@ let rec compile_expr ctx e =
 
   | A.EBinOp(_, e0, op, e1) ->
     let (_, it0) as iet0 = c e0 and (_, it1) as iet1= c e1 in
-    let lt = I.TLambda([it0; it1], it) in
+    let lt = I.TLambda(I.TProduct(None, lazy [it0; it1]), it, true) in
     (* TODO: I.EId??? *)
-    I.EApp((I.EId(List.assoc op binop_dic), lt), [iet0;  iet1]), it
+    I.EApp((I.EId(List.assoc op binop_dic), lt), I.et_product[iet0;  iet1]), it
 
   | A.EUnOp(_, op, e) ->
-    let (_, it') as iet' = c e in
-    let lt = I.TLambda([it'], it) in
-    I.EApp((I.EId(List.assoc op unop_dic), lt), [iet']), it
+    let (_, it_res) as iet_res = c e in
+    let lt = I.TLambda(it_res, it, true) in
+    I.EApp((I.EId(List.assoc op unop_dic), lt), iet_res), it
 
   | A.ETypeAnnot (_, e, t) -> c e
 

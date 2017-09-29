@@ -18,8 +18,8 @@ let rec string_of_etype =
   function
   | TPrim(name, []) -> name
   | TPrim(name, args) -> "("^name^" "^sep_list " " t args^")"
-  | TLambda(params, result) ->
-    "("^sep_list ", " t params^" -> "^t result^")"
+  | TLambda(prm, res, cmb) ->
+    "("^t prm^(if cmb then " -> " else " => ")^t res^")"
   | TProduct(Some(name, []), _)   | TSum(Some(name, []), _) -> name
   | TProduct(Some(name, args), _) | TSum(Some(name, args), _) -> 
    "("^name^sep_list " " t args^")"
@@ -36,10 +36,14 @@ let rec string_of_expr =
   function
   | ELit s | EId s -> s
   | EColl(k, list) -> "("^string_of_collection_kind k^" "^sep_list " " et list^")"
-  | ELambda(params, body) ->
-    "(\\"^sep_list " " (fun (v, vt) -> "["^v^":"^t vt^"]") params^" -> "^et body^")"
-  | ELet(v, e0, e1) -> "let "^v^" = "^et e0^" in "^et e1
-  | EApp(f, args) -> "("^sep_list " " et (f::args)^")"
+  | ELambda(v_prm, t_prm, [], res) ->
+    "(\\"^v_prm^" :: "^t t_prm^": "^et res^")"
+  | ELambda(v_prm, t_prm, env, res) ->
+    let env_item (n, t_n) = n^" :: "^t t_n in
+    "(\\"^v_prm^" :: "^t t_prm^"/"^sep_list "," env_item env^": "^et res^")"
+  | ELet(v, e0, e1) -> "let "^v^" = "^et e0^"; "^et e1
+  (* TODO remove parentheses and commas in applications of products *)
+  | EApp(f, arg) -> "("^et f^" "^et arg^")"
   | EProduct x  -> "("^sep_list ", " et x^")"
   | ESum (i, n, x) -> sprintf "<%d|%d> %s" i n (et x)
   | EProductGet(x, i, n) -> sprintf "%s.<%d|%d>" (et x) i n
@@ -47,7 +51,7 @@ let rec string_of_expr =
   | EStoreSet(i, e0, e1) -> sprintf "@%d <- %s; %s" i (et e0) (et e1)
   | ESumCase(e, cases) ->
     let f (var, it, e_case) = "["^var^":"^t it^"] -> "^et e_case in
-    "("^et e^" ? "^sep_list " | " f cases^")"
+    "case "^et e^" | "^sep_list " | " f cases^" end"
 
 and string_of_typed_expr (e, t) = "["^string_of_expr e^":"^string_of_etype t^"]"
 
@@ -56,10 +60,10 @@ let rec string_of_untyped_expr e =
   match e with
   | ELit s | EId s -> s
   | EColl(k, list) -> "("^string_of_collection_kind k^" "^sep_list " " r list^")"
-  | ELambda(params, body) ->
-    "\\"^sep_list " " fst params^" -> "^r body
-  | ELet(v, e0, e1) -> "let "^v^" = "^r e0^" in "^r e1
-  | EApp(f, args) -> "("^sep_list " " r (f::args)^")"
+  | ELambda(v_prm, t_prm, env, res) ->
+    "\\"^v_prm^": "^r res
+  | ELet(v, e0, e1) -> "let "^v^" = "^r e0^"; "^r e1
+  | EApp(f, arg) -> "("^r f^" "^r arg^")"
   | EProduct x  -> "("^sep_list ", " r x^")"
   | ESum (i, n, x) -> sprintf "<%d|%d>%s" i n (r x)
   | EProductGet(x, i, n) -> sprintf "%s.<%d|%d>" (r x) i n
@@ -68,4 +72,4 @@ let rec string_of_untyped_expr e =
   | ESumCase(e, cases) ->
     let f i (v, _, e_case) = sprintf "<%d>(%s): %s" i v (r e_case) in
     let cases = List.mapi f cases in
-    "("^r e^" ? "^String.concat " | " cases^")"
+    "case "^r e^" | "^String.concat " | " cases^" end"

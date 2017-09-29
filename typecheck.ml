@@ -68,11 +68,11 @@ let rec typecheck_expr ctx expr =
   | A.EId(_, id) ->
     let scheme = Ctx.scheme_of_evar ctx id in
     ctx, Ctx.instantiate_scheme scheme
-  | A.ELambda(_, pattern, sp, e, se) -> typecheck_ELambda ctx expr pattern sp e se
+  | A.ELambda(_, p_prm, t_prm, e_res) -> typecheck_ELambda ctx expr p_prm t_prm e_res
   | A.ELet(_, id, t_id, e0, e1) -> typecheck_ELetIn ctx id t_id e0 e1
   | A.EApp(_, f, arg) -> typecheck_EApp ctx f arg
-  | A.ETypeAnnot(_, e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx t te
-  | A.ETuple(_, exprs) -> let ctx, types = list_fold_map typecheck_expr ctx exprs in ctx, A.TTuple(A.noloc, types)
+  | A.ETypeAnnot(_, e, t) -> let ctx, te = typecheck_expr ctx e in Ctx.unify ctx te t
+  | A.ETuple(_, list) -> typecheck_ETuple ctx list
   | A.ESequence(_, list) -> typecheck_ESequence ctx list
   | A.ETupleGet(_, e, n) -> typecheck_ETupleGet ctx e n
   | A.EProduct(_, pairs) -> typecheck_EProduct ctx pairs
@@ -95,7 +95,7 @@ let rec typecheck_expr ctx expr =
 and typecheck_EColl_CList ctx elts =
   let fold (ctx, t0) elt =
     let ctx, t1 = typecheck_expr ctx elt in
-    Ctx.unify ctx t0 t1
+    Ctx.unify ctx t0 t1 (* TODO order? *)
   in
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "list", [elt_type])
@@ -111,7 +111,7 @@ and typecheck_EColl_CMap ctx elts =
   let ctx, types = list_fold_map typecheck_expr ctx elts in 
   let fold (ctx, t0) elt =
     let ctx, t1 = typecheck_expr ctx elt in
-    Ctx.unify ctx t0 t1
+    Ctx.unify ctx t0 t1 (* TODO order? *)
   in
   let ctx, k_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"key" ()) klist in
   let ctx, v_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"val" ()) vlist in
@@ -120,38 +120,40 @@ and typecheck_EColl_CMap ctx elts =
 and typecheck_EColl_CSet ctx elts =
   let fold (ctx, t0) elt =
     let ctx, t1 = typecheck_expr ctx elt in
-    Ctx.unify ctx t0 t1
+    Ctx.unify ctx t0 t1 (* TODO order? *)
   in
   let ctx, elt_type = List.fold_left fold (ctx, A.fresh_tvar ~prefix:"elt" ()) elts in
   ctx, A.TApp(A.noloc, "set", [elt_type])
 
-and typecheck_ELambda ctx l pattern tp ebody tb =
+and typecheck_ELambda ctx l p_prm t_prm e_res =
   (* TODO forbid global vars shadowing? *)
-  (* Type e supposing that id has type t_arg. *)
-  let ctx, bmrk = push_pattern_bindings ctx pattern tp in
-  let ctx, tb'  = typecheck_expr ctx ebody in
-  let ctx, tb   = Ctx.unify ctx tb tb' in
-  let ctx       = Ctx.pop_evars bmrk ctx in
-  let tlambda   = A.TLambda(A.noloc, tp, tb) in
-  let bound_vars = A.pattern_binds_list pattern in
-  match A.get_free_evars ~except:(bound_vars @ Standard_ctx.globals) ebody with
-  | [] -> ctx, tlambda
-  | env ->
-    let get_type id = snd @@ typecheck_expr ctx (A.eid id) in
-    let tenv = List.map get_type env in 
-    ctx, A.tapp "closure" [A.ttuple tenv; tp; tb]
+  (* Type e supposing that id has type t_arg. *) 
+  let cmb = (* Combinator or closure? *)
+    let prm = A.pattern_binds_list p_prm in
+    let globals = Standard_ctx.globals in
+    let free_evars = A.get_free_evars ~except:(prm@globals) e_res in
+    A.M.is_empty free_evars in
+  let ctx, bmrk  = push_pattern_bindings ctx p_prm t_prm in
+  let ctx, t_res = typecheck_expr ctx e_res in
+  let ctx        = Ctx.pop_evars bmrk ctx in
+  let tlambda    = A.TLambda(A.noloc, t_prm, t_res, cmb) in
+  ctx, tlambda
 
 and typecheck_ELetIn ctx pattern sp e0 e1 =
   (* TODO forbid global vars shadowing? *)
   if fst sp <> [] then unsupported "Polymorphic types";
   let ctx, t0   = typecheck_expr ctx e0 in
-  let ctx, t0   = Ctx.unify ctx (snd sp) t0 in
+  let ctx, t0   = Ctx.unify ctx t0 (snd sp) in
   let ctx, bmrk = push_pattern_bindings ctx pattern (snd sp) in
   (* TODO let-gen: tvars in bookmarked evars which don't occur anywhere else
    * in `ctx` can be generalized in these evars' type schemes. *)
   let ctx, t1 = typecheck_expr ctx e1 in
   let ctx = Ctx.pop_evars bmrk ctx in
   ctx, t1
+
+and typecheck_ETuple ctx list =
+  let ctx, types = list_fold_map typecheck_expr ctx list in
+  ctx, A.TTuple(A.noloc, types)
 
 and typecheck_ESequence ctx list =
   let rlist    = List.rev list in
@@ -167,16 +169,11 @@ and typecheck_ESequence ctx list =
 and typecheck_EApp ctx f arg =
   let ctx, t_f = typecheck_expr ctx f in
   let ctx, t_arg = typecheck_expr ctx arg in
-  let ctx, t_param, t_result = match t_f with
-    | A.TLambda(_, t_param, t_result)
-    | A.TApp(_, "closure", [_; t_param; t_result]) -> ctx, t_param, t_result
-    | A.TId(_, id) ->
-        let t_param, t_result = A.fresh_tvar(), A.fresh_tvar() in
-        let ctx, _ = Ctx.unify ctx t_f (A.TLambda(A.noloc, t_param, t_result)) in
-        ctx, t_param, t_result
-    | _ -> type_error (A.loc_of_expr f) "Applying a non-function" in
-  let ctx, _ = Ctx.unify ctx t_param t_arg in
-  ctx, t_result
+  let t_prm, t_res = match t_f with
+  | A.TLambda(_, t_prm, t_res, _) -> t_prm, t_res
+  | _  -> type_error (A.loc_of_expr f) "Applying a non-function" in
+  let ctx, _ = Ctx.unify ctx t_arg t_prm in
+  ctx, t_res
 
 and typecheck_ETupleGet ctx e n =
   let ctx, t_e = typecheck_expr ctx e in
@@ -191,12 +188,11 @@ and typecheck_EProduct ctx e_pairs =
   let tag0 = fst (List.hd e_pairs) in
   let name = Ctx.name_of_product_tag ctx tag0 in
   let t_result, t_items = Ctx.instantiate_composite name (Ctx.product_of_name ctx name) in
-  let ctx, t_pairs = list_fold_map
-    (fun ctx (tag, e) ->
-      let ctx, t = typecheck_expr ctx e in
-      let ctx, t = Ctx.unify ctx t (List.assoc tag t_items) in
-      ctx, (tag, t))
-    ctx e_pairs in
+  let f  ctx (tag, e) =
+    let ctx, t = typecheck_expr ctx e in
+    let ctx, t = Ctx.unify ctx t (List.assoc tag t_items) in
+    ctx, (tag, t) in
+  let ctx, t_pairs = list_fold_map f ctx e_pairs in
   ctx, t_result
 
 and typecheck_ESumCase ctx e e_cases =
@@ -205,7 +201,7 @@ and typecheck_ESumCase ctx e e_cases =
     with Not_found -> type_error (A.loc_of_expr e) (tag0^" is not a sum tag") in
   let t_sum, case_types = Ctx.instantiate_composite name (Ctx.sum_of_name ctx name) in
   let ctx, t_e = typecheck_expr ctx e in
-  let ctx, _ = Ctx.unify ctx t_sum t_e in
+  let ctx, _ = Ctx.unify ctx t_e t_sum in
   (* TODO check that declaration and case domains are equal. *)
   let ctx, t_pairs = list_fold_map
     (fun ctx (tag, (p, e)) ->
@@ -217,7 +213,7 @@ and typecheck_ESumCase ctx e e_cases =
       ctx, (tag, t))
     ctx e_cases in
   let ctx, t = List.fold_left
-    (fun (ctx, t) (tag, t') -> Ctx.unify ctx t t')
+    (fun (ctx, t) (tag, t') -> Ctx.unify ctx t t') (* TODO order? *)
     (ctx, snd(List.hd t_pairs)) (List.tl t_pairs) in
   ctx, t
 
@@ -226,7 +222,7 @@ and typecheck_EProductGet ctx e_product tag =
     with Not_found -> type_error (A.loc_of_expr e_product) (tag^" is not a product tag") in
   let t_product0, field_types = Ctx.instantiate_composite name (Ctx.product_of_name ctx name) in
   let ctx, t_product1 = typecheck_expr ctx e_product in
-  let ctx, _ = Ctx.unify ctx t_product0 t_product1 in
+  let ctx, _ = Ctx.unify ctx t_product1 t_product0 in
   let t = List.assoc tag field_types in
   ctx, t
 
@@ -235,17 +231,17 @@ and typecheck_EProductSet ctx e_product tag e_field =
     with Not_found -> type_error (A.loc_of_expr e_product) (tag^" is not a product tag") in
   let t_product0, field_types = Ctx.instantiate_composite name (Ctx.product_of_name ctx name) in
   let ctx, t_product1 = typecheck_expr ctx e_product in
-  let ctx, t_product2 = Ctx.unify ctx t_product0 t_product1 in
+  let ctx, t_product2 = Ctx.unify ctx t_product1 t_product0 in
   let t_field0 = List.assoc tag field_types in
   let ctx, t_field1 = typecheck_expr ctx e_field in
-  let ctx, _ = Ctx.unify ctx t_field0 t_field1 in
+  let ctx, _ = Ctx.unify ctx t_field1 t_field0 in
   ctx, t_product2
 
 and typecheck_EStoreSet ctx v e_field e =
   let _, field_types = Ctx.instantiate_composite "@" (Ctx.product_of_name ctx "@") in
   let t_field0 = List.assoc v field_types in
   let ctx, t_field1 = typecheck_expr ctx e_field in
-  let ctx, _ = Ctx.unify ctx t_field0 t_field1 in
+  let ctx, _ = Ctx.unify ctx t_field1 t_field0 in
   typecheck_expr ctx e
 
 and typecheck_ESum ctx tag e =
@@ -280,12 +276,12 @@ and typecheck_EBinOp ctx loc a op b =
       type_error loc ("Need more type annotation to determine wether  addition is "^
                       "(nat, int) -> int, (nat, nat) -> nat or (nat, time) -> time.")
       (* let ctx, _ = Ctx.unify ctx (A.TId(_, id)) (p "int") in ctx, p "int" *)
-    | A.TId(_, id), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "int") in ctx, p "int"
-    | A.TId(_, id), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "tez") in ctx, p "tez"
-    | A.TId(_, id), A.TApp(_, "time", []) | A.TApp(_, "time", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "nat") in ctx, p "nat"
+    | (A.TId _ as tid), A.TApp(_, "int", []) | A.TApp(_, "int", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "int") in ctx, p "int"
+    | (A.TId _ as tid), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "tez") in ctx, p "tez"
+    | (A.TId _ as tid), A.TApp(_, "time", []) | A.TApp(_, "time", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "nat") in ctx, p "nat"
     | A.TId(_, id0), A.TId(_, id1) ->
       type_error loc ("Need more type annotation to determine addition type.")
     | _ -> error "add"
@@ -296,10 +292,10 @@ and typecheck_EBinOp ctx loc a op b =
     begin match ta, tb with
     | A.TApp(_, t0, []), A.TApp(_, t1, []) when prims_in [t0; t1] ["int"; "nat"] -> ctx, p "int"
     | A.TApp(_, "tez", []), A.TApp(_, "tez", []) -> ctx, p "tez"
-    | A.TId(_, id), A.TApp(_, t, []) | A.TApp(_, t, []), A.TId(_, id) when prims_in [t] ["nat"; "int"] ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "int") in ctx, p "int"
-    | A.TId(_, id), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "tez") in ctx, p "tez"
+    | (A.TId _ as tid), A.TApp(_, t, []) | A.TApp(_, t, []), (A.TId _ as tid) when prims_in [t] ["nat"; "int"] ->
+      let ctx, _ = Ctx.unify ctx tid (p "int") in ctx, p "int"
+    | (A.TId _ as tid), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "tez") in ctx, p "tez"
     | A.TId(_, id0), A.TId(_, id1) ->
       type_error loc ("Need more annotations to determine substraction type.")
       (* let ctx, _ = Ctx.unify ctx ta (p "int") in
@@ -318,10 +314,10 @@ and typecheck_EBinOp ctx loc a op b =
       type_error loc ("Need more type annotation to determine wether  multiplication is "^
                       "(nat, int) -> int, (nat, nat) -> nat or (nat, tez) -> tez.")
       (* let ctx, _ = Ctx.unify ctx (A.TId(_, id)) (p "int") in ctx, p "int" *)
-    | A.TId(_, id), A.TApp(_, "int", []) | A.TApp(_, "int", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "int") in ctx, p "int"
-    | A.TId(_, id), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), A.TId(_, id) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "nat") in ctx, p "tez"
+    | (A.TId _ as tid), A.TApp(_, "int", []) | A.TApp(_, "int", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "int") in ctx, p "int"
+    | (A.TId _ as tid), A.TApp(_, "tez", []) | A.TApp(_, "tez", []), (A.TId _ as tid) ->
+      let ctx, _ = Ctx.unify ctx tid (p "nat") in ctx, p "tez"
     | A.TId(_, id0), A.TId(_, id1) ->
       type_error loc ("Need more annotations to determine multiplication type.")
       (* let ctx, _ = Ctx.unify ctx ta (p "int") in
@@ -339,12 +335,12 @@ and typecheck_EBinOp ctx loc a op b =
     | A.TApp(_, t0, []), A.TApp(_, t1, []) when prims_in [t0; t1] ["int"; "nat"] -> ctx, op "int" "nat"
     | A.TApp(_, "tez", []), A.TApp(_, "nat", []) -> ctx, op "tez" "tez"
     | A.TApp(_, "tez", []), A.TApp(_, "tez", []) -> ctx, op "nat" "tez"
-    | A.TId(_, id), A.TApp(_, t, []) | A.TApp(_, t, []), (A.TId(_, id)) when prims_in [t] ["int"; "nat"] ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "int") in ctx, op "int" "nat"
-    | A.TId(_, id), A.TApp(_, "tez", []) ->
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "tez") in ctx, op "nat" "tez"
-    | A.TApp(_, "tez", []), A.TId(_, id) -> (* `t1` Could be either tez or nat; let's arbitrarily pick nat *)
-      let ctx, _ = Ctx.unify ctx (A.TId(A.noloc, id)) (p "nat") in ctx, op "tez" "tez"
+    | (A.TId _ as tid), A.TApp(_, t, []) | A.TApp(_, t, []), (A.TId _ as tid) when prims_in [t] ["int"; "nat"] ->
+      let ctx, _ = Ctx.unify ctx tid (p "int") in ctx, op "int" "nat"
+    | (A.TId _ as tid), A.TApp(_, "tez", []) ->
+      let ctx, _ = Ctx.unify ctx tid (p "tez") in ctx, op "nat" "tez"
+    | A.TApp(_, "tez", []), (A.TId _ as tid) -> (* `t1` Could be either tez or nat; let's arbitrarily pick nat *)
+      let ctx, _ = Ctx.unify ctx tid (p "nat") in ctx, op "tez" "tez"
     | A.TId(_, id0), A.TId(_, id1) ->
       let ctx, _ = Ctx.unify ctx ta (p "int") in
       let ctx, _ = Ctx.unify ctx tb (p "int") in
@@ -442,8 +438,8 @@ let check_contract_calls expr =
   | A.ESumCase(_, e, list) -> List.exists (fun (v, (_, e)) -> v<>"call-contract" && f e) list
   | A.ESequence(_, list)                  -> List.exists f list
   | A.EColl(_, _, list)                   -> forbidden list "collections"
-  | A.ELambda(_, A.PId "call-contract", _, _, _)-> false
-  | A.ELambda(_, _, _, e, _)              -> forbidden [e] "functions"
+  | A.ELambda(_, A.PId "call-contract", _, _) -> false
+  | A.ELambda(_, _, _, e)                 -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                     -> forbidden [e0; e1] "function applications"
   | A.EBinOp(_, e0, _, e1)                -> forbidden [e0; e1] "binary operators"
   | A.EProductSet(_, e0, _, e1)           -> forbidden [e0; e1] "product updates"
@@ -467,7 +463,7 @@ let check_store_set expr =
   | A.ESumCase(_, e, list) -> f e || List.exists (fun (v, (_, e)) -> f e) list
   | A.ESequence(_, list)                -> List.exists f list
   | A.EColl(_, _, list)                 -> forbidden list "collections"
-  | A.ELambda(_, _, _, e, _)            -> forbidden [e] "functions"
+  | A.ELambda(_, _, _, e)               -> forbidden [e] "functions"
   | A.EApp(_, e0, e1)                   -> forbidden [e0; e1] "function applications"
   | A.EBinOp(_, e0, _, e1)              -> forbidden [e0; e1] "binary operators"
   | A.EProductSet(_, e0, _, e1)         -> forbidden [e0; e1] "product updates"
@@ -503,16 +499,17 @@ let typecheck_contract ctx (type_declarations, storage_fields, code) =
 
   (* Compile the code itself *)
   let ctx, t_code = typecheck_expr ctx code in
-  let t_param, t_result = match t_code with
-    | A.TLambda(_, t_param, t_result) -> t_param, t_result
-    | A.TApp(_, "closure", [_; t_param; t_result]) -> t_param, t_result
-    | _ -> failwith "Bad contract type"
+  let t_prm, t_res = match t_code with
+    (* type will be combinator or closure depending on whether `@` is used in it. *)
+    | A.TLambda(_, t_prm, t_res, _) -> t_prm, t_res
+    | _ -> type_error A.noloc 
+      ("Bad contract type "^String_of_ast.string_of_type t_code)
     in
   let t_store = Ctx.expand_type ctx (A.tid "@") in
   let ctx = Ctx.add_evar "@" ([], A.TApp(A.noloc, "@", [])) ctx in
 
   begin match code with
-    | A.ELambda(_, _, _, body, _) -> check_contract_calls body; check_store_set body;
+    | A.ELambda(_, _, _, res) -> check_contract_calls res; check_store_set res;
     | _ -> unsupported "Contract code must be a litteral lambda"
   end;
 
@@ -534,7 +531,7 @@ let typecheck_contract ctx (type_declarations, storage_fields, code) =
   (* TODO migrate contract-call and EStoreSet checks here. *)
   { ctx          = ctx; 
     storage_type = t_store; 
-    param_type   = t_param; 
-    result_type  = t_result; 
+    param_type   = t_prm; 
+    result_type  = t_res; 
     storage_init = storage_init;
     code         = code }
